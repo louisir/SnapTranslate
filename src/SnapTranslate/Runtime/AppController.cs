@@ -22,6 +22,7 @@ public sealed class AppController : IDisposable
         AppOptions options = new();
         ScreenCaptureService captureService = new(options);
         IOcrEngine ocrEngine = new FallbackOcrEngine(
+            new PaddleOcrProcessEngine(options),
             new TesseractLibraryOcrEngine(options),
             new TesseractCliOcrEngine(options));
         ITranslationService translationService = new CachedTranslationService(new LibreTranslateService(options));

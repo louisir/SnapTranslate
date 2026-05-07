@@ -6,6 +6,7 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 
 - C# / .NET 10 WPF 系统托盘应用，启动后常驻托盘。
 - 鼠标悬停后截取鼠标附近 ROI。
+- 优先通过 PaddleOCR runner 识别中英混排屏幕文字。
 - 默认通过 NuGet Tesseract native wrapper 做 OCR，VS 调试无需单独安装 Tesseract。
 - 可选回退到外部或随发布包携带的 `tesseract.exe`。
 - 从 OCR 结果中选择离鼠标最近的一行文字。
@@ -36,6 +37,7 @@ SnapTranslate 会截取鼠标附近的小块屏幕区域并在本地 OCR。配�
 
 - Windows
 - .NET SDK 10
+- PaddleOCR Python runner，可选但推荐用于中英混排
 - OCR：英文模型通过 NuGet 包随构建输出；中文模型可放入输出目录 `tessdata`
 - 可选 portable Tesseract CLI：发布包可内置，开发环境也可通过 PATH 或环境变量指定
 - LibreTranslate 兼容翻译服务，可选
@@ -58,9 +60,20 @@ dotnet run --project src/SnapTranslate/SnapTranslate.csproj
 $env:SNAPTRANSLATE_TESSERACT_PATH = "C:\Program Files\Tesseract-OCR\tesseract.exe"
 $env:SNAPTRANSLATE_TESSDATA_DIR = "C:\Program Files\Tesseract-OCR\tessdata"
 $env:SNAPTRANSLATE_OCR_LANG = "eng+chi_sim"
+$env:SNAPTRANSLATE_PYTHON = "D:\path\to\.venv-paddle\Scripts\python.exe"
+$env:SNAPTRANSLATE_PADDLEOCR_LANG = "ch"
 $env:SNAPTRANSLATE_LIBRETRANSLATE_URL = "http://localhost:5000"
 $env:SNAPTRANSLATE_SOURCE_LANG = "auto"
 $env:SNAPTRANSLATE_TARGET_LANG = "zh"
+```
+
+配置 PaddleOCR 开发 runner：
+
+```powershell
+python -m venv .venv-paddle
+.\.venv-paddle\Scripts\python -m pip install --upgrade pip
+.\.venv-paddle\Scripts\python -m pip install -r src\SnapTranslate\ocr\paddle\requirements.txt
+$env:SNAPTRANSLATE_PYTHON = "$PWD\.venv-paddle\Scripts\python.exe"
 ```
 
 如果需要中文 OCR，把 `chi_sim.traineddata` 放到调试输出目录：

@@ -15,6 +15,10 @@ public sealed class AppOptions
     public string? LibreTranslateApiKey { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_LIBRETRANSLATE_API_KEY");
     public string? TesseractPath { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_TESSERACT_PATH");
     public string? TessDataDirectory { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_TESSDATA_DIR");
+    public string? PaddleOcrRunnerPath { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_PADDLEOCR_RUNNER");
+    public string PythonPath { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_PYTHON") ?? "python";
+    public string PaddleOcrLanguage { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_PADDLEOCR_LANG") ?? "ch";
+    public TimeSpan OcrProcessTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     private static Uri? TryCreateUri(string? value)
     {
