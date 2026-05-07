@@ -54,3 +54,8 @@ compile_commands.json
 
 *_qmlcache.qrc
 
+# .NET
+bin/
+obj/
+*.user
+
