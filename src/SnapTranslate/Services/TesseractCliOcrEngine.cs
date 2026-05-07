@@ -24,10 +24,12 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
 
     public async Task<OcrResult> RecognizeAsync(CaptureRegion capture, CancellationToken cancellationToken)
     {
-        string? executable = ResolveExecutable();
-        if (executable is null)
+        TesseractRuntime? runtime = ResolveRuntime();
+        if (runtime is null)
         {
-            return new OcrResult(Array.Empty<OcrTextLine>(), "未找到 tesseract.exe。请安装 Tesseract，或设置 SNAPTRANSLATE_TESSERACT_PATH。");
+            return new OcrResult(
+                Array.Empty<OcrTextLine>(),
+                "未找到 OCR 运行时。发布包应包含 ocr\\tesseract\\tesseract.exe，开发环境可设置 SNAPTRANSLATE_TESSERACT_PATH。");
         }
 
         string imagePath = Path.Combine(Path.GetTempPath(), $"snaptranslate-{Guid.NewGuid():N}.png");
@@ -36,8 +38,8 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
             capture.Bitmap.Save(imagePath, ImageFormat.Png);
             ProcessStartInfo startInfo = new()
             {
-                FileName = executable,
-                Arguments = $"\"{imagePath}\" stdout -l {_options.OcrLanguage} --psm 6 tsv",
+                FileName = runtime.ExecutablePath,
+                Arguments = BuildArguments(imagePath, runtime.TessDataDirectory),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -63,11 +65,35 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
         }
     }
 
-    private string? ResolveExecutable()
+    private string BuildArguments(string imagePath, string? tessDataDirectory)
+    {
+        string tessDataArg = string.IsNullOrWhiteSpace(tessDataDirectory)
+            ? string.Empty
+            : $" --tessdata-dir \"{tessDataDirectory}\"";
+
+        return $"\"{imagePath}\" stdout -l {_options.OcrLanguage} --psm 6 tsv{tessDataArg}";
+    }
+
+    private TesseractRuntime? ResolveRuntime()
     {
         if (!string.IsNullOrWhiteSpace(_options.TesseractPath) && File.Exists(_options.TesseractPath))
         {
-            return _options.TesseractPath;
+            return CreateRuntime(_options.TesseractPath);
+        }
+
+        string baseDirectory = AppContext.BaseDirectory;
+        foreach (string relativePath in new[]
+                 {
+                     Path.Combine("ocr", "tesseract", "tesseract.exe"),
+                     Path.Combine("tesseract", "tesseract.exe"),
+                     Path.Combine("tools", "tesseract", "tesseract.exe")
+                 })
+        {
+            string candidate = Path.Combine(baseDirectory, relativePath);
+            if (File.Exists(candidate))
+            {
+                return CreateRuntime(candidate);
+            }
         }
 
         string? path = Environment.GetEnvironmentVariable("PATH");
@@ -80,6 +106,37 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
         {
             string candidate = Path.Combine(directory.Trim(), "tesseract.exe");
             if (File.Exists(candidate))
+            {
+                return CreateRuntime(candidate);
+            }
+        }
+
+        return null;
+    }
+
+    private TesseractRuntime CreateRuntime(string executablePath)
+    {
+        string? tessDataDirectory = ResolveTessDataDirectory(executablePath);
+        return new TesseractRuntime(executablePath, tessDataDirectory);
+    }
+
+    private string? ResolveTessDataDirectory(string executablePath)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.TessDataDirectory) &&
+            Directory.Exists(_options.TessDataDirectory))
+        {
+            return _options.TessDataDirectory;
+        }
+
+        string executableDirectory = Path.GetDirectoryName(executablePath) ?? AppContext.BaseDirectory;
+        foreach (string candidate in new[]
+                 {
+                     Path.Combine(executableDirectory, "tessdata"),
+                     Path.Combine(AppContext.BaseDirectory, "ocr", "tesseract", "tessdata"),
+                     Path.Combine(AppContext.BaseDirectory, "tessdata")
+                 })
+        {
+            if (Directory.Exists(candidate))
             {
                 return candidate;
             }
@@ -150,4 +207,6 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
     }
 
     private sealed record TsvWord(string LineKey, string Text, Rectangle Bounds, double Confidence);
+
+    private sealed record TesseractRuntime(string ExecutablePath, string? TessDataDirectory);
 }

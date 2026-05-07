@@ -35,7 +35,7 @@ SnapTranslate 会截取鼠标附近的小块屏幕区域并在本地 OCR。配�
 
 - Windows
 - .NET SDK 10
-- Tesseract OCR，可通过 PATH 找到 `tesseract.exe`，或设置 `SNAPTRANSLATE_TESSERACT_PATH`
+- OCR 运行时：发布包推荐内置 portable Tesseract，开发环境也可通过 PATH 或环境变量指定
 - LibreTranslate 兼容翻译服务，可选
 
 构建：
@@ -54,10 +54,29 @@ dotnet run --project src/SnapTranslate/SnapTranslate.csproj
 
 ```powershell
 $env:SNAPTRANSLATE_TESSERACT_PATH = "C:\Program Files\Tesseract-OCR\tesseract.exe"
+$env:SNAPTRANSLATE_TESSDATA_DIR = "C:\Program Files\Tesseract-OCR\tessdata"
 $env:SNAPTRANSLATE_OCR_LANG = "eng+chi_sim"
 $env:SNAPTRANSLATE_LIBRETRANSLATE_URL = "http://localhost:5000"
 $env:SNAPTRANSLATE_SOURCE_LANG = "auto"
 $env:SNAPTRANSLATE_TARGET_LANG = "zh"
 ```
+
+发布包中的 OCR 运行时推荐放在应用目录下：
+
+```text
+ocr/
+  tesseract/
+    tesseract.exe
+    tessdata/
+      eng.traineddata
+      chi_sim.traineddata
+```
+
+程序会按以下顺序查找 OCR：
+
+1. 应用目录 `ocr/tesseract/tesseract.exe`
+2. 应用目录 `tesseract/tesseract.exe`
+3. `SNAPTRANSLATE_TESSERACT_PATH`
+4. 系统 PATH 中的 `tesseract.exe`
 
 Qt/C++ 原型仍保留在 [swc](swc) 目录，后续以 C# 实现为主线。
