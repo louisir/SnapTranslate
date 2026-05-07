@@ -6,7 +6,8 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 
 - C# / .NET 10 WPF 系统托盘应用，启动后常驻托盘。
 - 鼠标悬停后截取鼠标附近 ROI。
-- 通过外部 `tesseract.exe` 对 ROI 图片做 OCR。
+- 默认通过 NuGet Tesseract native wrapper 做 OCR，VS 调试无需单独安装 Tesseract。
+- 可选回退到外部或随发布包携带的 `tesseract.exe`。
 - 从 OCR 结果中选择离鼠标最近的一行文字。
 - 可通过 LibreTranslate 兼容接口调用翻译引擎。
 - 未配置翻译引擎时，会显示 OCR 原文和配置提示。
@@ -35,7 +36,8 @@ SnapTranslate 会截取鼠标附近的小块屏幕区域并在本地 OCR。配�
 
 - Windows
 - .NET SDK 10
-- OCR 运行时：发布包推荐内置 portable Tesseract，开发环境也可通过 PATH 或环境变量指定
+- OCR：英文模型通过 NuGet 包随构建输出；中文模型可放入输出目录 `tessdata`
+- 可选 portable Tesseract CLI：发布包可内置，开发环境也可通过 PATH 或环境变量指定
 - LibreTranslate 兼容翻译服务，可选
 
 构建：
@@ -61,7 +63,13 @@ $env:SNAPTRANSLATE_SOURCE_LANG = "auto"
 $env:SNAPTRANSLATE_TARGET_LANG = "zh"
 ```
 
-发布包中的 OCR 运行时推荐放在应用目录下：
+如果需要中文 OCR，把 `chi_sim.traineddata` 放到调试输出目录：
+
+```text
+src/SnapTranslate/bin/Debug/net10.0-windows/tessdata/chi_sim.traineddata
+```
+
+发布包中的 Tesseract CLI 回退运行时可放在应用目录下：
 
 ```text
 ocr/

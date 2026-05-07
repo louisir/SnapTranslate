@@ -8,7 +8,7 @@ The C# implementation uses .NET 10, WPF, and Windows Forms tray APIs.
 
 ## Tesseract OCR
 
-The C# implementation can call a bundled or external `tesseract.exe` process to OCR the captured ROI image. Tesseract and its language data files are not committed in this repository, but official release packages may include a reviewed portable OCR runtime.
+The C# implementation uses the Tesseract NuGet package for native OCR and can fall back to a bundled or external `tesseract.exe` process. English language data is provided by the `Tesseract.Data.English` NuGet package. Additional language data files, such as Simplified Chinese, should be reviewed before being bundled in official releases.
 
 ## LibreTranslate-Compatible Service
 

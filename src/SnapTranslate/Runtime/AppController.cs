@@ -21,7 +21,9 @@ public sealed class AppController : IDisposable
         _application = application;
         AppOptions options = new();
         ScreenCaptureService captureService = new(options);
-        IOcrEngine ocrEngine = new TesseractCliOcrEngine(options);
+        IOcrEngine ocrEngine = new FallbackOcrEngine(
+            new TesseractLibraryOcrEngine(options),
+            new TesseractCliOcrEngine(options));
         ITranslationService translationService = new CachedTranslationService(new LibreTranslateService(options));
 
         _bubbleWindow = new BubbleWindow();
