@@ -4,3 +4,7 @@ bin/
 obj/
 *.user
 
+# Python
+__pycache__/
+*.pyc
+
