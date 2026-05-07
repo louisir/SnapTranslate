@@ -1,9 +1,0 @@
-<RCC>
-    <qresource prefix="/">
-        <file>res/bracket_11607099.png</file>
-        <file>res/checked.png</file>
-        <file>res/checked_hover.png</file>
-        <file>res/unchecked.png</file>
-        <file>res/unchecked_hover.png</file>
-    </qresource>
-</RCC>
