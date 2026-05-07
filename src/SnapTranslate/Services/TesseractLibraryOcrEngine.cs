@@ -1,7 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -47,22 +46,20 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
 
             using TesseractEngine engine = new(tessDataDirectory, language, EngineMode.Default);
             using Pix image = Pix.LoadFromFile(imagePath);
-            using Page page = engine.Process(image, PageSegMode.Auto);
+            using Page page = engine.Process(image, PageSegMode.SingleBlock);
 
             cancellationToken.ThrowIfCancellationRequested();
-            string text = page.GetText()?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(text))
+            IReadOnlyList<OcrTextLine> lines = ExtractLines(page, capture.Origin);
+            if (lines.Count == 0)
             {
                 return new OcrResult(Array.Empty<OcrTextLine>());
             }
 
-            Rectangle bounds = new(capture.Origin, capture.Bitmap.Size);
-            double confidence = page.GetMeanConfidence() * 100.0;
             string? status = language == _options.OcrLanguage
                 ? null
                 : $"当前 NuGet OCR 语言：{language}。如需中文，请把 chi_sim.traineddata 放入输出目录 tessdata。";
 
-            return new OcrResult(new[] { new OcrTextLine(text, bounds, confidence) }, status);
+            return new OcrResult(lines, status);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -73,6 +70,83 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
             TryDelete(imagePath);
         }
     }
+
+    private static IReadOnlyList<OcrTextLine> ExtractLines(Page page, Point origin)
+    {
+        using ResultIterator iterator = page.GetIterator();
+        iterator.Begin();
+
+        List<OcrWord> words = new();
+        do
+        {
+            string? text = iterator.GetText(PageIteratorLevel.Word)?.Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            if (!iterator.TryGetBoundingBox(PageIteratorLevel.Word, out Rect bounds))
+            {
+                continue;
+            }
+
+            double confidence = iterator.GetConfidence(PageIteratorLevel.Word);
+            if (confidence < 15)
+            {
+                continue;
+            }
+
+            Rectangle screenBounds = new(
+                origin.X + bounds.X1,
+                origin.Y + bounds.Y1,
+                Math.Max(1, bounds.Width),
+                Math.Max(1, bounds.Height));
+
+            words.Add(new OcrWord(text, screenBounds, confidence));
+        }
+        while (iterator.Next(PageIteratorLevel.Word));
+
+        return BuildLines(words);
+    }
+
+    private static IReadOnlyList<OcrTextLine> BuildLines(IReadOnlyList<OcrWord> words)
+    {
+        if (words.Count == 0)
+        {
+            return Array.Empty<OcrTextLine>();
+        }
+
+        List<List<OcrWord>> lines = new();
+        foreach (OcrWord word in words.OrderBy(word => word.Bounds.Top).ThenBy(word => word.Bounds.Left))
+        {
+            List<OcrWord>? line = lines.FirstOrDefault(existing =>
+                Math.Abs(GetCenterY(existing[0].Bounds) - GetCenterY(word.Bounds)) <=
+                Math.Max(8, Math.Min(existing[0].Bounds.Height, word.Bounds.Height) / 2));
+
+            if (line is null)
+            {
+                lines.Add(new List<OcrWord> { word });
+            }
+            else
+            {
+                line.Add(word);
+            }
+        }
+
+        return lines
+            .Select(line =>
+            {
+                OcrWord[] orderedWords = line.OrderBy(word => word.Bounds.Left).ToArray();
+                string text = string.Join(" ", orderedWords.Select(word => word.Text));
+                Rectangle bounds = orderedWords.Select(word => word.Bounds).Aggregate(Rectangle.Union);
+                double confidence = orderedWords.Average(word => word.Confidence);
+                return new OcrTextLine(text, bounds, confidence);
+            })
+            .Where(line => line.Text.Length >= 2)
+            .ToArray();
+    }
+
+    private static int GetCenterY(Rectangle rectangle) => rectangle.Top + rectangle.Height / 2;
 
     private string? ResolveTessDataDirectory()
     {
@@ -128,4 +202,6 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
         {
         }
     }
+
+    private sealed record OcrWord(string Text, Rectangle Bounds, double Confidence);
 }

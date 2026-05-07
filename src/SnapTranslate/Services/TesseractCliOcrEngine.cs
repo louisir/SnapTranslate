@@ -186,6 +186,8 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
                 double confidence = lineWords.Average(word => word.Confidence);
                 return new OcrTextLine(text, bounds, confidence);
             })
+            .Where(line => line.Confidence >= 15)
+            .Where(line => line.Text.Length >= 2)
             .ToArray();
     }
 

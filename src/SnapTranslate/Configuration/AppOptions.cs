@@ -7,7 +7,7 @@ public sealed class AppOptions
 {
     public TimeSpan HoverDelay { get; init; } = TimeSpan.FromMilliseconds(700);
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(100);
-    public Size CaptureSize { get; init; } = new(520, 220);
+    public Size CaptureSize { get; init; } = new(360, 140);
     public string OcrLanguage { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_OCR_LANG") ?? "eng+chi_sim";
     public string TargetLanguage { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_TARGET_LANG") ?? "zh";
     public string SourceLanguage { get; init; } = Environment.GetEnvironmentVariable("SNAPTRANSLATE_SOURCE_LANG") ?? "auto";

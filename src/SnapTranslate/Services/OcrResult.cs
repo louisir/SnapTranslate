@@ -7,6 +7,9 @@ namespace SnapTranslate.Services;
 
 public sealed class OcrResult
 {
+    private const int MaxLineDistance = 56;
+    private const double MinConfidence = 20.0;
+
     public OcrResult(IReadOnlyList<OcrTextLine> lines, string? statusMessage = null)
     {
         Lines = lines;
@@ -18,10 +21,23 @@ public sealed class OcrResult
 
     public OcrTextLine? FindNearestLine(Point screenPoint)
     {
-        return Lines
+        OcrTextLine? nearby = Lines
             .Where(line => !string.IsNullOrWhiteSpace(line.Text))
+            .Where(line => line.Confidence >= MinConfidence)
+            .Where(line => DistanceToRectangle(screenPoint, line.ScreenBounds) <= MaxLineDistance)
             .OrderBy(line => DistanceToRectangle(screenPoint, line.ScreenBounds))
             .ThenByDescending(line => line.Confidence)
+            .FirstOrDefault();
+
+        if (nearby is not null)
+        {
+            return nearby;
+        }
+
+        return Lines
+            .Where(line => !string.IsNullOrWhiteSpace(line.Text))
+            .Where(line => line.ScreenBounds.Contains(screenPoint))
+            .OrderByDescending(line => line.Confidence)
             .FirstOrDefault();
     }
 
