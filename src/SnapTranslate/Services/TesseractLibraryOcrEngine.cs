@@ -21,7 +21,12 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
 
     public Task<OcrResult> RecognizeAsync(CaptureRegion capture, CancellationToken cancellationToken)
     {
-        return Task.Run(() => Recognize(capture, cancellationToken), cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(CreateCanceledResult());
+        }
+
+        return Task.Run(() => Recognize(capture, cancellationToken));
     }
 
     private OcrResult Recognize(CaptureRegion capture, CancellationToken cancellationToken)
@@ -41,14 +46,22 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
         string imagePath = Path.Combine(Path.GetTempPath(), $"snaptranslate-{Guid.NewGuid():N}.png");
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return CreateCanceledResult();
+            }
+
             capture.Bitmap.Save(imagePath, System.Drawing.Imaging.ImageFormat.Png);
 
             using TesseractEngine engine = new(tessDataDirectory, language, EngineMode.Default);
             using Pix image = Pix.LoadFromFile(imagePath);
             using Page page = engine.Process(image, PageSegMode.SingleBlock);
 
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return CreateCanceledResult();
+            }
+
             IReadOnlyList<OcrTextLine> lines = ExtractLines(page, capture.Origin);
             if (lines.Count == 0)
             {
@@ -61,7 +74,11 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
 
             return new OcrResult(lines, status);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            return CreateCanceledResult();
+        }
+        catch (Exception ex)
         {
             return new OcrResult(Array.Empty<OcrTextLine>(), $"NuGet OCR 初始化失败：{ex.Message}");
         }
@@ -201,6 +218,11 @@ public sealed class TesseractLibraryOcrEngine : IOcrEngine
         catch
         {
         }
+    }
+
+    private static OcrResult CreateCanceledResult()
+    {
+        return new OcrResult(Array.Empty<OcrTextLine>());
     }
 
     private sealed record OcrWord(string Text, Rectangle Bounds, double Confidence);

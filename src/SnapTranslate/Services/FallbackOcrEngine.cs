@@ -20,6 +20,11 @@ public sealed class FallbackOcrEngine : IOcrEngine
 
         foreach (IOcrEngine engine in _engines)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new OcrResult(Array.Empty<OcrTextLine>());
+            }
+
             OcrResult result = await engine.RecognizeAsync(capture, cancellationToken);
             if (result.Lines.Count > 0)
             {

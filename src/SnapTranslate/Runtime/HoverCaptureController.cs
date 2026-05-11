@@ -85,6 +85,11 @@ public sealed class HoverCaptureController : IDisposable
         {
             using CaptureRegion capture = _captureService.CaptureAround(cursorPosition);
             OcrResult ocrResult = await _ocrEngine.RecognizeAsync(capture, captureCts.Token);
+            if (captureCts.IsCancellationRequested)
+            {
+                return;
+            }
+
             OcrTextLine? line = ocrResult.FindNearestLine(cursorPosition);
             if (line is null || string.IsNullOrWhiteSpace(line.Text))
             {
@@ -93,6 +98,11 @@ public sealed class HoverCaptureController : IDisposable
             }
 
             TranslationResult translation = await _translationService.TranslateAsync(line.Text, captureCts.Token);
+            if (captureCts.IsCancellationRequested)
+            {
+                return;
+            }
+
             _bubbleWindow.ShowResult(cursorPosition, line.Text, translation.TranslatedText, translation.StatusMessage);
         }
         catch (OperationCanceledException)
