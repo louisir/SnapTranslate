@@ -15,6 +15,7 @@ public sealed class AppOptions
     {
         HoverDelay = TimeSpan.FromMilliseconds(GetIntEnvironment("SNAPTRANSLATE_HOVER_DELAY_MS", settings.HoverDelayMs));
         PollInterval = TimeSpan.FromMilliseconds(50);
+        HoverModifierKey = ParseHoverModifierKey(GetEnvironment("SNAPTRANSLATE_HOVER_MODIFIER_KEY", settings.HoverModifierKey));
         CaptureSize = new Size(
             GetIntEnvironment("SNAPTRANSLATE_CAPTURE_WIDTH", settings.CaptureWidth),
             GetIntEnvironment("SNAPTRANSLATE_CAPTURE_HEIGHT", settings.CaptureHeight));
@@ -47,6 +48,7 @@ public sealed class AppOptions
 
     public TimeSpan HoverDelay { get; }
     public TimeSpan PollInterval { get; }
+    public HoverModifierKey HoverModifierKey { get; }
     public Size CaptureSize { get; }
     public string OcrLanguage { get; }
     public string TargetLanguage { get; }
@@ -93,5 +95,12 @@ public sealed class AppOptions
         return language.Equals("zh", StringComparison.OrdinalIgnoreCase)
             ? "zh-Hans"
             : language;
+    }
+
+    private static HoverModifierKey ParseHoverModifierKey(string value)
+    {
+        return Enum.TryParse(value, ignoreCase: true, out HoverModifierKey modifierKey)
+            ? modifierKey
+            : HoverModifierKey.None;
     }
 }

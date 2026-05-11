@@ -10,6 +10,7 @@ public sealed class AppSettings
     public int HoverDelayMs { get; set; } = 700;
     public int CaptureWidth { get; set; } = 360;
     public int CaptureHeight { get; set; } = 140;
+    public string HoverModifierKey { get; set; } = "None";
 
     public string SourceLanguage { get; set; } = "auto";
     public string TargetLanguage { get; set; } = "zh";

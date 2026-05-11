@@ -6,7 +6,8 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 
 - C# / .NET 10 WPF 系统托盘应用，启动后常驻托盘。
 - 鼠标悬停后截取鼠标附近 ROI。
-- 如果检测到刚发生过鼠标拖拽选择，会优先读取划选文本，不再局限于鼠标附近 ROI。
+- 如果检测到刚发生过鼠标拖拽选择或双击选词，会直接读取选中文本，不再局限于鼠标附近 ROI。
+- 悬停 OCR 取词可配置为需要按住 Ctrl、Alt 或 Shift 才触发。
 - 优先通过 PaddleOCR runner 识别中英混排屏幕文字。
 - 默认通过 NuGet Tesseract native wrapper 做 OCR，VS 调试无需单独安装 Tesseract。
 - 可选回退到外部或随发布包携带的 `tesseract.exe`。
@@ -62,7 +63,7 @@ dotnet run --project src/SnapTranslate/SnapTranslate.csproj
 1. 启动应用。
 2. 右键托盘图标。
 3. 打开“设置”。
-4. 在“翻译”页填写微软翻译 Key、Region、目标语言。
+4. 在“翻译”页选择或输入源语言、目标语言，填写微软翻译 Key、Region。
 5. 在“OCR”页配置 PaddleOCR Python 或 runner。
 6. 保存后立即生效。
 
@@ -86,6 +87,7 @@ $env:SNAPTRANSLATE_MICROSOFT_TRANSLATOR_TO = "zh-Hans"
 $env:SNAPTRANSLATE_LIBRETRANSLATE_URL = "http://localhost:5000"
 $env:SNAPTRANSLATE_SOURCE_LANG = "auto"
 $env:SNAPTRANSLATE_TARGET_LANG = "zh"
+$env:SNAPTRANSLATE_HOVER_MODIFIER_KEY = "Ctrl"
 ```
 
 微软翻译配置说明：
@@ -94,6 +96,7 @@ $env:SNAPTRANSLATE_TARGET_LANG = "zh"
 - `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_REGION`：资源区域。区域资源或多服务资源通常需要填写。
 - `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_ENDPOINT`：可选，默认 `https://api.cognitive.microsofttranslator.com`。Azure 中国云可改成对应 endpoint。
 - `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_TO`：微软目标语言代码，简体中文建议 `zh-Hans`。
+- `SNAPTRANSLATE_HOVER_MODIFIER_KEY`：悬停 OCR 取词快捷键，可选 `None`、`Ctrl`、`Alt`、`Shift`。
 
 不要把 key 写进代码或提交到仓库。
 

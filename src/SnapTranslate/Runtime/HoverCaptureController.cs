@@ -32,6 +32,8 @@ public sealed class HoverCaptureController : IDisposable
     private bool _dragDetected;
     private bool _selectionCaptureAttempted;
     private Point _mouseDownPosition;
+    private Point _lastClickReleasePosition;
+    private DateTimeOffset _lastClickReleasedAt = DateTimeOffset.MinValue;
     private DateTimeOffset _selectionCandidateUntil = DateTimeOffset.MinValue;
 
     public HoverCaptureController(
@@ -95,6 +97,12 @@ public sealed class HoverCaptureController : IDisposable
             _hoverTriggered = false;
             _bubbleWindow.Hide();
             CancelCurrentCapture();
+            return;
+        }
+
+        if (!IsHoverModifierPressed())
+        {
+            _hoverTriggered = false;
             return;
         }
 
@@ -200,14 +208,37 @@ public sealed class HoverCaptureController : IDisposable
             _leftMouseDown = false;
             if (_dragDetected)
             {
-                _selectionCandidateUntil = DateTimeOffset.UtcNow + SelectionCandidateWindow;
-                _selectionCaptureAttempted = false;
+                MarkSelectionCandidate();
+            }
+            else if (IsDoubleClickRelease(currentPosition))
+            {
+                MarkSelectionCandidate();
             }
 
+            _lastClickReleasedAt = DateTimeOffset.UtcNow;
+            _lastClickReleasePosition = currentPosition;
             _dragDetected = false;
         }
 
         return isLeftDown;
+    }
+
+    private void MarkSelectionCandidate()
+    {
+        _selectionCandidateUntil = DateTimeOffset.UtcNow + SelectionCandidateWindow;
+        _selectionCaptureAttempted = false;
+    }
+
+    private bool IsDoubleClickRelease(Point currentPosition)
+    {
+        if (DateTimeOffset.UtcNow - _lastClickReleasedAt > TimeSpan.FromMilliseconds(Forms.SystemInformation.DoubleClickTime))
+        {
+            return false;
+        }
+
+        Size doubleClickSize = Forms.SystemInformation.DoubleClickSize;
+        return Math.Abs(currentPosition.X - _lastClickReleasePosition.X) <= Math.Max(1, doubleClickSize.Width / 2) &&
+               Math.Abs(currentPosition.Y - _lastClickReleasePosition.Y) <= Math.Max(1, doubleClickSize.Height / 2);
     }
 
     private async Task<string?> TryGetRecentSelectedTextAsync(CancellationToken cancellationToken)
@@ -293,6 +324,18 @@ public sealed class HoverCaptureController : IDisposable
             sourceText,
             translation.TranslatedText,
             CombineStatus(sourceStatus, translation.StatusMessage));
+    }
+
+    private bool IsHoverModifierPressed()
+    {
+        return _options.HoverModifierKey switch
+        {
+            HoverModifierKey.None => true,
+            HoverModifierKey.Ctrl => (Forms.Control.ModifierKeys & Forms.Keys.Control) == Forms.Keys.Control,
+            HoverModifierKey.Alt => (Forms.Control.ModifierKeys & Forms.Keys.Alt) == Forms.Keys.Alt,
+            HoverModifierKey.Shift => (Forms.Control.ModifierKeys & Forms.Keys.Shift) == Forms.Keys.Shift,
+            _ => true
+        };
     }
 
     private static string? CombineStatus(params string?[] statuses)
