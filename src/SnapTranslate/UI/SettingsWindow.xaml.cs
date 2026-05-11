@@ -23,9 +23,7 @@ public partial class SettingsWindow : Window
 
     private void LoadSettings()
     {
-        HoverDelayBox.Text = _settings.HoverDelayMs.ToString(CultureInfo.InvariantCulture);
-        CaptureWidthBox.Text = _settings.CaptureWidth.ToString(CultureInfo.InvariantCulture);
-        CaptureHeightBox.Text = _settings.CaptureHeight.ToString(CultureInfo.InvariantCulture);
+        LoadCaptureSettings(_settings);
 
         SourceLanguageBox.Text = _settings.SourceLanguage;
         TargetLanguageBox.Text = _settings.TargetLanguage;
@@ -92,6 +90,11 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void ResetCaptureSettings_Click(object sender, RoutedEventArgs e)
+    {
+        LoadCaptureSettings(new AppSettings());
+    }
+
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
         DialogResult = false;
@@ -118,6 +121,13 @@ public partial class SettingsWindow : Window
 
         WpfMessageBox.Show(this, $"{fieldName} 必须是大于 0 的整数。", "设置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
         return false;
+    }
+
+    private void LoadCaptureSettings(AppSettings settings)
+    {
+        HoverDelayBox.Text = settings.HoverDelayMs.ToString(CultureInfo.InvariantCulture);
+        CaptureWidthBox.Text = settings.CaptureWidth.ToString(CultureInfo.InvariantCulture);
+        CaptureHeightBox.Text = settings.CaptureHeight.ToString(CultureInfo.InvariantCulture);
     }
 
     private static string NormalizeText(string value, string fallback)

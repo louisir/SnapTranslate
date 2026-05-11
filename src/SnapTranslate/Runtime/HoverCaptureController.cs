@@ -30,6 +30,7 @@ public sealed class HoverCaptureController : IDisposable
     private bool _isCapturing;
     private bool _leftMouseDown;
     private bool _dragDetected;
+    private bool _selectionCaptureAttempted;
     private Point _mouseDownPosition;
     private DateTimeOffset _selectionCandidateUntil = DateTimeOffset.MinValue;
 
@@ -75,6 +76,15 @@ public sealed class HoverCaptureController : IDisposable
         {
             _bubbleWindow.Hide();
             CancelCurrentCapture();
+            return;
+        }
+
+        if (!_isCapturing && TryConsumeSelectionCandidate())
+        {
+            _lastPosition = currentPosition;
+            _lastMovementAt = DateTimeOffset.UtcNow;
+            _hoverTriggered = true;
+            await TranslateSelectedTextAndShowAsync(currentPosition);
             return;
         }
 
@@ -172,6 +182,8 @@ public sealed class HoverCaptureController : IDisposable
         {
             _leftMouseDown = true;
             _dragDetected = false;
+            _selectionCaptureAttempted = false;
+            _selectionCandidateUntil = DateTimeOffset.MinValue;
             _mouseDownPosition = currentPosition;
         }
         else if (isLeftDown)
@@ -189,6 +201,7 @@ public sealed class HoverCaptureController : IDisposable
             if (_dragDetected)
             {
                 _selectionCandidateUntil = DateTimeOffset.UtcNow + SelectionCandidateWindow;
+                _selectionCaptureAttempted = false;
             }
 
             _dragDetected = false;
@@ -199,18 +212,65 @@ public sealed class HoverCaptureController : IDisposable
 
     private async Task<string?> TryGetRecentSelectedTextAsync(CancellationToken cancellationToken)
     {
-        if (DateTimeOffset.UtcNow > _selectionCandidateUntil)
+        if (!TryConsumeSelectionCandidate())
         {
             return null;
         }
 
-        string? selectedText = await _selectedTextCaptureService.TryCaptureSelectedTextAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(selectedText))
+        return await _selectedTextCaptureService.TryCaptureSelectedTextAsync(cancellationToken);
+    }
+
+    private bool TryConsumeSelectionCandidate()
+    {
+        if (_selectionCaptureAttempted || DateTimeOffset.UtcNow > _selectionCandidateUntil)
         {
-            _selectionCandidateUntil = DateTimeOffset.MinValue;
+            return false;
         }
 
-        return selectedText;
+        _selectionCaptureAttempted = true;
+        _selectionCandidateUntil = DateTimeOffset.MinValue;
+        return true;
+    }
+
+    private async Task TranslateSelectedTextAndShowAsync(Point cursorPosition)
+    {
+        CancelCurrentCapture();
+        using CancellationTokenSource captureCts = new();
+        _currentCapture = captureCts;
+        _isCapturing = true;
+
+        try
+        {
+            string? selectedText = await _selectedTextCaptureService.TryCaptureSelectedTextAsync(captureCts.Token);
+            if (captureCts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(selectedText))
+            {
+                _hoverTriggered = false;
+                return;
+            }
+
+            await TranslateAndShowAsync(cursorPosition, selectedText, "来自划选文本", captureCts);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _bubbleWindow.ShowMessage(cursorPosition, "取词失败", ex.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_currentCapture, captureCts))
+            {
+                _currentCapture = null;
+            }
+
+            _isCapturing = false;
+        }
     }
 
     private async Task TranslateAndShowAsync(

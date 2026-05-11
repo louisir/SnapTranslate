@@ -133,6 +133,13 @@
 
                         <Label Content="截图高度"/>
                         <TextBox x:Name="CaptureHeightBox"/>
+
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,4,0,0">
+                            <Button Content="恢复默认取词设置"
+                                    Click="ResetCaptureSettings_Click"/>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
