@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -12,8 +13,12 @@ namespace SnapTranslate.Runtime;
 
 public sealed class HoverCaptureController : IDisposable
 {
+    private static readonly TimeSpan SelectionCandidateWindow = TimeSpan.FromSeconds(4);
+    private const int DragSelectionThreshold = 6;
+
     private readonly AppOptions _options;
     private readonly ScreenCaptureService _captureService;
+    private readonly SelectedTextCaptureService _selectedTextCaptureService;
     private readonly IOcrEngine _ocrEngine;
     private readonly ITranslationService _translationService;
     private readonly BubbleWindow _bubbleWindow;
@@ -23,11 +28,22 @@ public sealed class HoverCaptureController : IDisposable
     private CancellationTokenSource? _currentCapture;
     private bool _hoverTriggered;
     private bool _isCapturing;
+    private bool _leftMouseDown;
+    private bool _dragDetected;
+    private Point _mouseDownPosition;
+    private DateTimeOffset _selectionCandidateUntil = DateTimeOffset.MinValue;
 
-    public HoverCaptureController(AppOptions options, ScreenCaptureService captureService, IOcrEngine ocrEngine, ITranslationService translationService, BubbleWindow bubbleWindow)
+    public HoverCaptureController(
+        AppOptions options,
+        ScreenCaptureService captureService,
+        SelectedTextCaptureService selectedTextCaptureService,
+        IOcrEngine ocrEngine,
+        ITranslationService translationService,
+        BubbleWindow bubbleWindow)
     {
         _options = options;
         _captureService = captureService;
+        _selectedTextCaptureService = selectedTextCaptureService;
         _ocrEngine = ocrEngine;
         _translationService = translationService;
         _bubbleWindow = bubbleWindow;
@@ -55,6 +71,13 @@ public sealed class HoverCaptureController : IDisposable
         }
 
         Point currentPosition = Forms.Cursor.Position;
+        if (UpdateSelectionTracking(currentPosition))
+        {
+            _bubbleWindow.Hide();
+            CancelCurrentCapture();
+            return;
+        }
+
         if (currentPosition != _lastPosition)
         {
             _lastPosition = currentPosition;
@@ -83,6 +106,18 @@ public sealed class HoverCaptureController : IDisposable
 
         try
         {
+            string? selectedText = await TryGetRecentSelectedTextAsync(captureCts.Token);
+            if (captureCts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedText))
+            {
+                await TranslateAndShowAsync(cursorPosition, selectedText, "来自划选文本", captureCts);
+                return;
+            }
+
             using CaptureRegion capture = _captureService.CaptureAround(cursorPosition);
             OcrResult ocrResult = await _ocrEngine.RecognizeAsync(capture, captureCts.Token);
             if (captureCts.IsCancellationRequested)
@@ -97,13 +132,14 @@ public sealed class HoverCaptureController : IDisposable
                 return;
             }
 
-            TranslationResult translation = await _translationService.TranslateAsync(line.Text, captureCts.Token);
-            if (captureCts.IsCancellationRequested)
+            string normalizedText = TextSanitizer.NormalizeForTranslation(line.Text);
+            if (!TextSanitizer.IsUsefulForTranslation(normalizedText))
             {
+                _bubbleWindow.ShowMessage(cursorPosition, "未识别到可翻译文本", ocrResult.StatusMessage);
                 return;
             }
 
-            _bubbleWindow.ShowResult(cursorPosition, line.Text, translation.TranslatedText, translation.StatusMessage);
+            await TranslateAndShowAsync(cursorPosition, normalizedText, ocrResult.StatusMessage, captureCts);
         }
         catch (OperationCanceledException)
         {
@@ -127,5 +163,83 @@ public sealed class HoverCaptureController : IDisposable
     {
         _currentCapture?.Cancel();
         _currentCapture = null;
+    }
+
+    private bool UpdateSelectionTracking(Point currentPosition)
+    {
+        bool isLeftDown = (Forms.Control.MouseButtons & Forms.MouseButtons.Left) == Forms.MouseButtons.Left;
+        if (isLeftDown && !_leftMouseDown)
+        {
+            _leftMouseDown = true;
+            _dragDetected = false;
+            _mouseDownPosition = currentPosition;
+        }
+        else if (isLeftDown)
+        {
+            int dx = Math.Abs(currentPosition.X - _mouseDownPosition.X);
+            int dy = Math.Abs(currentPosition.Y - _mouseDownPosition.Y);
+            if (dx >= DragSelectionThreshold || dy >= DragSelectionThreshold)
+            {
+                _dragDetected = true;
+            }
+        }
+        else if (_leftMouseDown)
+        {
+            _leftMouseDown = false;
+            if (_dragDetected)
+            {
+                _selectionCandidateUntil = DateTimeOffset.UtcNow + SelectionCandidateWindow;
+            }
+
+            _dragDetected = false;
+        }
+
+        return isLeftDown;
+    }
+
+    private async Task<string?> TryGetRecentSelectedTextAsync(CancellationToken cancellationToken)
+    {
+        if (DateTimeOffset.UtcNow > _selectionCandidateUntil)
+        {
+            return null;
+        }
+
+        string? selectedText = await _selectedTextCaptureService.TryCaptureSelectedTextAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(selectedText))
+        {
+            _selectionCandidateUntil = DateTimeOffset.MinValue;
+        }
+
+        return selectedText;
+    }
+
+    private async Task TranslateAndShowAsync(
+        Point cursorPosition,
+        string sourceText,
+        string? sourceStatus,
+        CancellationTokenSource captureCts)
+    {
+        TranslationResult translation = await _translationService.TranslateAsync(sourceText, captureCts.Token);
+        if (captureCts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _bubbleWindow.ShowResult(
+            cursorPosition,
+            sourceText,
+            translation.TranslatedText,
+            CombineStatus(sourceStatus, translation.StatusMessage));
+    }
+
+    private static string? CombineStatus(params string?[] statuses)
+    {
+        string[] parts = statuses
+            .Where(status => !string.IsNullOrWhiteSpace(status))
+            .Select(status => status!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return parts.Length == 0 ? null : string.Join(Environment.NewLine, parts);
     }
 }

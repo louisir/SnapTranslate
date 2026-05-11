@@ -6,10 +6,12 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 
 - C# / .NET 10 WPF 系统托盘应用，启动后常驻托盘。
 - 鼠标悬停后截取鼠标附近 ROI。
+- 如果检测到刚发生过鼠标拖拽选择，会优先读取划选文本，不再局限于鼠标附近 ROI。
 - 优先通过 PaddleOCR runner 识别中英混排屏幕文字。
 - 默认通过 NuGet Tesseract native wrapper 做 OCR，VS 调试无需单独安装 Tesseract。
 - 可选回退到外部或随发布包携带的 `tesseract.exe`。
 - 从 OCR 结果中选择离鼠标最近的一行文字。
+- 翻译前会清理 OCR/选中文本中的多余空白、控制字符和常见断行噪声。
 - 优先支持微软 Azure AI Translator，保留 LibreTranslate 兼容接口作为备用。
 - 未配置翻译引擎时，会显示 OCR 原文和配置提示。
 - 托盘菜单提供“设置”窗口，配置会保存到当前用户目录。

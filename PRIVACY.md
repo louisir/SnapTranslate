@@ -4,9 +4,9 @@ Version 1.0, 2026-05-07
 
 SnapTranslate（拾译）通过鼠标附近 ROI 截图、OCR 和翻译引擎交互来实现取词翻译。
 
-当前 C# 实现会读取鼠标位置、鼠标附近的小块屏幕截图、OCR 识别出的文本和文本框位置。
+当前 C# 实现会读取鼠标位置、鼠标附近的小块屏幕截图、OCR 识别出的文本和文本框位置。如果检测到刚发生过鼠标拖拽选择，也会优先读取划选文本。
 
-当前 C# 实现不模拟 `Ctrl+C`，不会主动改写剪贴板。
+划选文本优先模式会临时模拟 `Ctrl+C` 读取选区，并尝试恢复原剪贴板内容。某些应用或剪贴板格式可能无法完全恢复。
 
 未配置翻译引擎时，当前 C# 实现不会主动把 OCR 文字发送到网络。如果设置 `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_KEY`，SnapTranslate 会把 OCR 识别出的文字发送到 Azure AI Translator 获取译文。如果设置 `SNAPTRANSLATE_LIBRETRANSLATE_URL` 且未配置微软翻译 key，SnapTranslate 会把 OCR 文字发送到该 LibreTranslate 兼容服务。
 

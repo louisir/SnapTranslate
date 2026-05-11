@@ -36,7 +36,13 @@ public sealed class AppController : IDisposable
             new TesseractCliOcrEngine(options));
         ITranslationService translationService = new CachedTranslationService(CreateTranslationService(options));
 
-        return new HoverCaptureController(options, captureService, ocrEngine, translationService, _bubbleWindow);
+        return new HoverCaptureController(
+            options,
+            captureService,
+            new SelectedTextCaptureService(),
+            ocrEngine,
+            translationService,
+            _bubbleWindow);
     }
 
     public void Start()
