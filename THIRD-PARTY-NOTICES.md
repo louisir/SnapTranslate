@@ -16,7 +16,11 @@ The C# implementation can call an external PaddleOCR runner process for Chinese/
 
 ## LibreTranslate-Compatible Service
 
-The C# implementation can send recognized text to a LibreTranslate-compatible HTTP service when `SNAPTRANSLATE_LIBRETRANSLATE_URL` is configured. The service itself is not bundled in this repository.
+The C# implementation can send recognized text to a LibreTranslate-compatible HTTP service when `SNAPTRANSLATE_LIBRETRANSLATE_URL` is configured and Microsoft Translator is not configured. The service itself is not bundled in this repository.
+
+## Azure AI Translator
+
+The C# implementation can send recognized text to Microsoft Azure AI Translator when `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_KEY` is configured. The Microsoft service is not bundled in this repository and is governed by Microsoft's applicable Azure terms.
 
 ## Qt
 

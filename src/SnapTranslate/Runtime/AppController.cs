@@ -25,7 +25,7 @@ public sealed class AppController : IDisposable
             new PaddleOcrProcessEngine(options),
             new TesseractLibraryOcrEngine(options),
             new TesseractCliOcrEngine(options));
-        ITranslationService translationService = new CachedTranslationService(new LibreTranslateService(options));
+        ITranslationService translationService = new CachedTranslationService(CreateTranslationService(options));
 
         _bubbleWindow = new BubbleWindow();
         _hoverController = new HoverCaptureController(options, captureService, ocrEngine, translationService, _bubbleWindow);
@@ -44,6 +44,16 @@ public sealed class AppController : IDisposable
         _bubbleWindow.Close();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+    }
+
+    private static ITranslationService CreateTranslationService(AppOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.MicrosoftTranslatorKey))
+        {
+            return new MicrosoftTranslatorService(options);
+        }
+
+        return new LibreTranslateService(options);
     }
 
     private Forms.NotifyIcon CreateNotifyIcon()

@@ -10,7 +10,7 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 - 默认通过 NuGet Tesseract native wrapper 做 OCR，VS 调试无需单独安装 Tesseract。
 - 可选回退到外部或随发布包携带的 `tesseract.exe`。
 - 从 OCR 结果中选择离鼠标最近的一行文字。
-- 可通过 LibreTranslate 兼容接口调用翻译引擎。
+- 优先支持微软 Azure AI Translator，保留 LibreTranslate 兼容接口作为备用。
 - 未配置翻译引擎时，会显示 OCR 原文和配置提示。
 
 ## 授权
@@ -40,7 +40,7 @@ SnapTranslate 会截取鼠标附近的小块屏幕区域并在本地 OCR。配�
 - PaddleOCR Python runner，可选但推荐用于中英混排
 - OCR：英文模型通过 NuGet 包随构建输出；中文模型可放入输出目录 `tessdata`
 - 可选 portable Tesseract CLI：发布包可内置，开发环境也可通过 PATH 或环境变量指定
-- LibreTranslate 兼容翻译服务，可选
+- Azure AI Translator 或 LibreTranslate 兼容翻译服务，可选
 
 构建：
 
@@ -62,10 +62,22 @@ $env:SNAPTRANSLATE_TESSDATA_DIR = "C:\Program Files\Tesseract-OCR\tessdata"
 $env:SNAPTRANSLATE_OCR_LANG = "eng+chi_sim"
 $env:SNAPTRANSLATE_PYTHON = "D:\path\to\.venv-paddle\Scripts\python.exe"
 $env:SNAPTRANSLATE_PADDLEOCR_LANG = "ch"
+$env:SNAPTRANSLATE_MICROSOFT_TRANSLATOR_KEY = "<your-azure-translator-key>"
+$env:SNAPTRANSLATE_MICROSOFT_TRANSLATOR_REGION = "<your-resource-region>"
+$env:SNAPTRANSLATE_MICROSOFT_TRANSLATOR_TO = "zh-Hans"
 $env:SNAPTRANSLATE_LIBRETRANSLATE_URL = "http://localhost:5000"
 $env:SNAPTRANSLATE_SOURCE_LANG = "auto"
 $env:SNAPTRANSLATE_TARGET_LANG = "zh"
 ```
+
+微软翻译配置说明：
+
+- `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_KEY`：Azure AI Translator key，配置后优先使用微软翻译。
+- `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_REGION`：资源区域。区域资源或多服务资源通常需要填写。
+- `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_ENDPOINT`：可选，默认 `https://api.cognitive.microsofttranslator.com`。Azure 中国云可改成对应 endpoint。
+- `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_TO`：微软目标语言代码，简体中文建议 `zh-Hans`。
+
+不要把 key 写进代码或提交到仓库。
 
 配置 PaddleOCR 开发 runner：
 
