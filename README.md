@@ -12,6 +12,7 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 - 从 OCR 结果中选择离鼠标最近的一行文字。
 - 优先支持微软 Azure AI Translator，保留 LibreTranslate 兼容接口作为备用。
 - 未配置翻译引擎时，会显示 OCR 原文和配置提示。
+- 托盘菜单提供“设置”窗口，配置会保存到当前用户目录。
 
 ## 授权
 
@@ -54,7 +55,22 @@ dotnet build SnapTranslate.slnx
 dotnet run --project src/SnapTranslate/SnapTranslate.csproj
 ```
 
-可选配置：
+常规配置：
+
+1. 启动应用。
+2. 右键托盘图标。
+3. 打开“设置”。
+4. 在“翻译”页填写微软翻译 Key、Region、目标语言。
+5. 在“OCR”页配置 PaddleOCR Python 或 runner。
+6. 保存后立即生效。
+
+配置文件位置：
+
+```text
+%APPDATA%\SnapTranslate\settings.json
+```
+
+环境变量仍可用于开发调试，并会覆盖配置文件：
 
 ```powershell
 $env:SNAPTRANSLATE_TESSERACT_PATH = "C:\Program Files\Tesseract-OCR\tesseract.exe"

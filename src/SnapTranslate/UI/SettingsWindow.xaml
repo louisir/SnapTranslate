@@ -1,0 +1,141 @@
+<Window x:Class="SnapTranslate.UI.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SnapTranslate 设置"
+        Width="560"
+        Height="640"
+        MinWidth="520"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <Style TargetType="TextBox">
+            <Setter Property="Margin" Value="0,4,0,10"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Margin" Value="0,4,0,10"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="Label">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Foreground" Value="#26323F"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinWidth" Value="86"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,14,0,0">
+            <Button Content="打开配置目录"
+                    Click="OpenConfigDirectory_Click"/>
+            <Button Content="保存"
+                    IsDefault="True"
+                    Click="Save_Click"/>
+            <Button Content="取消"
+                    IsCancel="True"
+                    Click="Cancel_Click"/>
+        </StackPanel>
+
+        <TabControl>
+            <TabItem Header="翻译">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="微软翻译"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"/>
+
+                        <Label Content="Azure AI Translator Key"/>
+                        <PasswordBox x:Name="MicrosoftKeyBox"/>
+
+                        <Label Content="资源区域"/>
+                        <TextBox x:Name="MicrosoftRegionBox"
+                                 ToolTip="例如 eastasia、eastus。区域资源或多服务资源通常需要填写。"/>
+
+                        <Label Content="Endpoint"/>
+                        <TextBox x:Name="MicrosoftEndpointBox"/>
+
+                        <Label Content="目标语言"/>
+                        <TextBox x:Name="MicrosoftToBox"
+                                 ToolTip="简体中文建议 zh-Hans。"/>
+
+                        <Separator Margin="0,10,0,14"/>
+
+                        <TextBlock Text="备用 LibreTranslate"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"/>
+
+                        <Label Content="LibreTranslate URL"/>
+                        <TextBox x:Name="LibreUrlBox"/>
+
+                        <Label Content="LibreTranslate API Key"/>
+                        <PasswordBox x:Name="LibreKeyBox"/>
+
+                        <Label Content="源语言"/>
+                        <TextBox x:Name="SourceLanguageBox"/>
+
+                        <Label Content="通用目标语言"/>
+                        <TextBox x:Name="TargetLanguageBox"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="OCR">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="PaddleOCR"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"/>
+
+                        <Label Content="Python 路径"/>
+                        <TextBox x:Name="PythonPathBox"/>
+
+                        <Label Content="PaddleOCR Runner 路径"/>
+                        <TextBox x:Name="PaddleRunnerBox"
+                                 ToolTip="可留空，默认使用应用目录 ocr/paddle/runner.py。"/>
+
+                        <Label Content="PaddleOCR 语言"/>
+                        <TextBox x:Name="PaddleLanguageBox"/>
+
+                        <Separator Margin="0,10,0,14"/>
+
+                        <TextBlock Text="Tesseract 兜底"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"/>
+
+                        <Label Content="Tesseract OCR 语言"/>
+                        <TextBox x:Name="OcrLanguageBox"/>
+
+                        <Label Content="tesseract.exe 路径"/>
+                        <TextBox x:Name="TesseractPathBox"/>
+
+                        <Label Content="tessdata 目录"/>
+                        <TextBox x:Name="TessDataBox"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="取词">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <Label Content="悬停延迟，毫秒"/>
+                        <TextBox x:Name="HoverDelayBox"/>
+
+                        <Label Content="截图宽度"/>
+                        <TextBox x:Name="CaptureWidthBox"/>
+
+                        <Label Content="截图高度"/>
+                        <TextBox x:Name="CaptureHeightBox"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

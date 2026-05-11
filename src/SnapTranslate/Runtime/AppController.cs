@@ -6,6 +6,7 @@ using SnapTranslate.Configuration;
 using SnapTranslate.Services;
 using SnapTranslate.UI;
 using WpfApplication = System.Windows.Application;
+using WpfMessageBox = System.Windows.MessageBox;
 
 namespace SnapTranslate.Runtime;
 
@@ -13,13 +14,21 @@ public sealed class AppController : IDisposable
 {
     private readonly WpfApplication _application;
     private readonly BubbleWindow _bubbleWindow;
-    private readonly HoverCaptureController _hoverController;
     private readonly Forms.NotifyIcon _notifyIcon;
+    private AppSettings _settings;
+    private HoverCaptureController _hoverController;
 
     public AppController(WpfApplication application)
     {
         _application = application;
-        AppOptions options = new();
+        _settings = AppSettings.Load();
+        _bubbleWindow = new BubbleWindow();
+        _hoverController = CreateHoverController(_settings.ToOptions());
+        _notifyIcon = CreateNotifyIcon();
+    }
+
+    private HoverCaptureController CreateHoverController(AppOptions options)
+    {
         ScreenCaptureService captureService = new(options);
         IOcrEngine ocrEngine = new FallbackOcrEngine(
             new PaddleOcrProcessEngine(options),
@@ -27,9 +36,7 @@ public sealed class AppController : IDisposable
             new TesseractCliOcrEngine(options));
         ITranslationService translationService = new CachedTranslationService(CreateTranslationService(options));
 
-        _bubbleWindow = new BubbleWindow();
-        _hoverController = new HoverCaptureController(options, captureService, ocrEngine, translationService, _bubbleWindow);
-        _notifyIcon = CreateNotifyIcon();
+        return new HoverCaptureController(options, captureService, ocrEngine, translationService, _bubbleWindow);
     }
 
     public void Start()
@@ -73,10 +80,15 @@ public sealed class AppController : IDisposable
             }
         };
 
+        Forms.ToolStripMenuItem settingsItem = new("设置");
+        settingsItem.Click += (_, _) => ShowSettingsWindow();
+
         Forms.ToolStripMenuItem exitItem = new("退出");
         exitItem.Click += (_, _) => _application.Shutdown();
 
         menu.Items.Add(enabledItem);
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add(settingsItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(exitItem);
 
@@ -86,6 +98,35 @@ public sealed class AppController : IDisposable
             Icon = CreateTrayIcon(),
             ContextMenuStrip = menu
         };
+    }
+
+    private void ShowSettingsWindow()
+    {
+        _application.Dispatcher.Invoke(() =>
+        {
+            SettingsWindow window = new(_settings);
+            window.SettingsSaved += (_, settings) =>
+            {
+                _settings = settings;
+                ReloadRuntime();
+                WpfMessageBox.Show(
+                    "设置已保存并生效。",
+                    "SnapTranslate（拾译）",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+            };
+            window.ShowDialog();
+        });
+    }
+
+    private void ReloadRuntime()
+    {
+        bool wasEnabled = _hoverController.IsEnabled;
+        _hoverController.Dispose();
+        _bubbleWindow.Hide();
+        _hoverController = CreateHoverController(_settings.ToOptions());
+        _hoverController.IsEnabled = wasEnabled;
+        _hoverController.Start();
     }
 
     private static Icon CreateTrayIcon()

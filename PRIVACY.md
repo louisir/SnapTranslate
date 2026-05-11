@@ -11,3 +11,11 @@ SnapTranslate（拾译）通过鼠标附近 ROI 截图、OCR 和翻译引擎交�
 未配置翻译引擎时，当前 C# 实现不会主动把 OCR 文字发送到网络。如果设置 `SNAPTRANSLATE_MICROSOFT_TRANSLATOR_KEY`，SnapTranslate 会把 OCR 识别出的文字发送到 Azure AI Translator 获取译文。如果设置 `SNAPTRANSLATE_LIBRETRANSLATE_URL` 且未配置微软翻译 key，SnapTranslate 会把 OCR 文字发送到该 LibreTranslate 兼容服务。
 
 当前 C# 实现不会持久化保存取词文本。OCR 临时截图写入系统临时目录，并在 OCR 完成后尽力删除。若发布包内置 Tesseract OCR，截图只会交给本地 OCR 进程处理。
+
+应用设置保存到当前用户目录：
+
+```text
+%APPDATA%\SnapTranslate\settings.json
+```
+
+该文件可能包含翻译 API key。请不要把它提交到代码仓库或分享给他人。
