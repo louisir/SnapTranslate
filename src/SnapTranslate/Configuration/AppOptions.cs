@@ -14,7 +14,7 @@ public sealed class AppOptions
     public AppOptions(AppSettings settings)
     {
         HoverDelay = TimeSpan.FromMilliseconds(GetIntEnvironment("SNAPTRANSLATE_HOVER_DELAY_MS", settings.HoverDelayMs));
-        PollInterval = TimeSpan.FromMilliseconds(100);
+        PollInterval = TimeSpan.FromMilliseconds(50);
         CaptureSize = new Size(
             GetIntEnvironment("SNAPTRANSLATE_CAPTURE_WIDTH", settings.CaptureWidth),
             GetIntEnvironment("SNAPTRANSLATE_CAPTURE_HEIGHT", settings.CaptureHeight));

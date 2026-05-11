@@ -249,7 +249,10 @@ public sealed class HoverCaptureController : IDisposable
 
             if (string.IsNullOrWhiteSpace(selectedText))
             {
-                _hoverTriggered = false;
+                _bubbleWindow.ShowMessage(
+                    cursorPosition,
+                    "未获取到划选文本",
+                    "已跳过截图 OCR。请确认目标窗口支持 Ctrl+C 复制划选内容。");
                 return;
             }
 
