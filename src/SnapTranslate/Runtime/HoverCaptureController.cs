@@ -143,7 +143,7 @@ public sealed class HoverCaptureController : IDisposable
                 return;
             }
 
-            OcrTextLine? line = ocrResult.FindNearestLine(cursorPosition);
+            OcrTextLine? line = ocrResult.FindNearestText(cursorPosition);
             if (line is null || string.IsNullOrWhiteSpace(line.Text))
             {
                 _bubbleWindow.ShowMessage(cursorPosition, "未识别到文字", ocrResult.StatusMessage);
