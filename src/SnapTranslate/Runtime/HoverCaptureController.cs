@@ -14,6 +14,7 @@ namespace SnapTranslate.Runtime;
 public sealed class HoverCaptureController : IDisposable
 {
     private static readonly TimeSpan SelectionCandidateWindow = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan SelectionFallbackDelay = TimeSpan.FromMilliseconds(280);
     private const int DragSelectionThreshold = 6;
     private static readonly TimeSpan ExternalBubbleProtection = TimeSpan.FromSeconds(2);
 
@@ -38,6 +39,8 @@ public sealed class HoverCaptureController : IDisposable
     private Point _lastClickReleasePosition;
     private DateTimeOffset _lastClickReleasedAt = DateTimeOffset.MinValue;
     private DateTimeOffset _selectionCandidateUntil = DateTimeOffset.MinValue;
+    private DateTimeOffset _selectionCandidateReadyAt = DateTimeOffset.MinValue;
+    private int _selectionRequestVersion;
 
     public HoverCaptureController(
         AppOptions options,
@@ -80,6 +83,8 @@ public sealed class HoverCaptureController : IDisposable
         _leftMouseDown = false;
         _selectionCaptureAttempted = true;
         _selectionCandidateUntil = DateTimeOffset.MinValue;
+        _selectionCandidateReadyAt = DateTimeOffset.MinValue;
+        _selectionRequestVersion++;
         _bubbleProtectedUntil = DateTimeOffset.UtcNow + ExternalBubbleProtection;
         _lastPosition = cursorPosition;
         _lastMovementAt = DateTimeOffset.UtcNow;
@@ -160,6 +165,11 @@ public sealed class HoverCaptureController : IDisposable
             _lastMovementAt = DateTimeOffset.UtcNow;
             _hoverTriggered = true;
             await TranslateSelectedTextAndShowAsync(currentPosition);
+            return;
+        }
+
+        if (HasPendingSelectionCandidate())
+        {
             return;
         }
 
@@ -327,10 +337,10 @@ public sealed class HoverCaptureController : IDisposable
         _dragDetected = _dragDetected || IsDragRelease(currentPosition);
         if (_dragDetected || IsDoubleClickRelease(currentPosition))
         {
-            MarkSelectionCandidate();
+            int requestVersion = MarkSelectionCandidate();
             if (triggerImmediately)
             {
-                _ = TranslateSelectionCandidateAsync(currentPosition);
+                _ = TranslateSelectionCandidateAsync(currentPosition, requestVersion);
             }
         }
 
@@ -339,10 +349,14 @@ public sealed class HoverCaptureController : IDisposable
         _dragDetected = false;
     }
 
-    private void MarkSelectionCandidate()
+    private int MarkSelectionCandidate()
     {
-        _selectionCandidateUntil = DateTimeOffset.UtcNow + SelectionCandidateWindow;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        _selectionCandidateUntil = now + SelectionCandidateWindow;
+        _selectionCandidateReadyAt = now + SelectionFallbackDelay;
         _selectionCaptureAttempted = false;
+        _selectionRequestVersion++;
+        return _selectionRequestVersion;
     }
 
     private bool IsDragRelease(Point currentPosition)
@@ -376,18 +390,39 @@ public sealed class HoverCaptureController : IDisposable
 
     private bool TryConsumeSelectionCandidate()
     {
-        if (_selectionCaptureAttempted || DateTimeOffset.UtcNow > _selectionCandidateUntil)
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (_selectionCaptureAttempted || now > _selectionCandidateUntil || now < _selectionCandidateReadyAt)
         {
             return false;
         }
 
         _selectionCaptureAttempted = true;
         _selectionCandidateUntil = DateTimeOffset.MinValue;
+        _selectionCandidateReadyAt = DateTimeOffset.MinValue;
         return true;
     }
 
-    private async Task TranslateSelectionCandidateAsync(Point cursorPosition)
+    private bool HasPendingSelectionCandidate()
     {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        return !_selectionCaptureAttempted &&
+               now <= _selectionCandidateUntil &&
+               now < _selectionCandidateReadyAt;
+    }
+
+    private async Task TranslateSelectionCandidateAsync(Point cursorPosition, int requestVersion)
+    {
+        TimeSpan delay = _selectionCandidateReadyAt - DateTimeOffset.UtcNow;
+        if (delay > TimeSpan.Zero)
+        {
+            await Task.Delay(delay);
+        }
+
+        if (requestVersion != _selectionRequestVersion)
+        {
+            return;
+        }
+
         if (_isCapturing || !TryConsumeSelectionCandidate())
         {
             return;
