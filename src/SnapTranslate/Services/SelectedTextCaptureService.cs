@@ -20,6 +20,7 @@ public sealed class SelectedTextCaptureService
     private const int ClipboardSetRetryCount = 3;
     private const int ClipboardPollDelayMs = 60;
     private const int ClipboardWaitTimeoutMs = 1200;
+    private const int ClipboardSettleWindowMs = 240;
     private const int DirectSelectionProbeCount = 4;
     private const int DirectSelectionProbeDelayMs = 80;
     private const int MaxSelectionTextLength = 4000;
@@ -32,11 +33,12 @@ public sealed class SelectedTextCaptureService
     public async Task<string?> TryCaptureSelectedTextAsync(CancellationToken cancellationToken)
     {
         string? directText = await TryCaptureDirectSelectedTextAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(directText))
-        {
-            return directText;
-        }
+        string? clipboardText = await TryCaptureClipboardSelectedTextAsync(cancellationToken);
+        return IsBetterSelectionText(clipboardText, directText) ? clipboardText : directText;
+    }
 
+    private static async Task<string?> TryCaptureClipboardSelectedTextAsync(CancellationToken cancellationToken)
+    {
         WpfDataObject? originalData = TryGetClipboardDataObject();
         string probeText = ClipboardProbePrefix + Guid.NewGuid().ToString("N");
         bool probeSet = TrySetClipboardText(probeText);
@@ -116,6 +118,9 @@ public sealed class SelectedTextCaptureService
         CancellationToken cancellationToken)
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(ClipboardWaitTimeoutMs);
+        DateTimeOffset stableUntil = DateTimeOffset.MinValue;
+        string? bestText = null;
+
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -131,13 +136,22 @@ public sealed class SelectedTextCaptureService
             if (TextSanitizer.IsUsefulForTranslation(normalizedText) &&
                 (probeSet || afterSequence != beforeSequence))
             {
-                return normalizedText;
+                if (IsBetterSelectionText(normalizedText, bestText))
+                {
+                    bestText = normalizedText;
+                    stableUntil = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(ClipboardSettleWindowMs);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(bestText) && DateTimeOffset.UtcNow >= stableUntil)
+            {
+                return bestText;
             }
 
             await Task.Delay(ClipboardPollDelayMs, cancellationToken);
         }
 
-        return null;
+        return bestText;
     }
 
     private static string? TryCaptureAutomationSelectedText()
