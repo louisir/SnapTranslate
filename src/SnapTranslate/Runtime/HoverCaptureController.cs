@@ -17,9 +17,8 @@ public sealed class HoverCaptureController : IDisposable
     private const int DragSelectionThreshold = 6;
 
     private readonly AppOptions _options;
-    private readonly ScreenCaptureService _captureService;
     private readonly SelectedTextCaptureService _selectedTextCaptureService;
-    private readonly IOcrEngine _ocrEngine;
+    private readonly IPointTextCaptureEngine _pointTextCaptureEngine;
     private readonly ITranslationService _translationService;
     private readonly BubbleWindow _bubbleWindow;
     private readonly DispatcherTimer _timer;
@@ -40,16 +39,14 @@ public sealed class HoverCaptureController : IDisposable
 
     public HoverCaptureController(
         AppOptions options,
-        ScreenCaptureService captureService,
         SelectedTextCaptureService selectedTextCaptureService,
-        IOcrEngine ocrEngine,
+        IPointTextCaptureEngine pointTextCaptureEngine,
         ITranslationService translationService,
         BubbleWindow bubbleWindow)
     {
         _options = options;
-        _captureService = captureService;
         _selectedTextCaptureService = selectedTextCaptureService;
-        _ocrEngine = ocrEngine;
+        _pointTextCaptureEngine = pointTextCaptureEngine;
         _translationService = translationService;
         _bubbleWindow = bubbleWindow;
         _lastPosition = Forms.Cursor.Position;
@@ -162,28 +159,19 @@ public sealed class HoverCaptureController : IDisposable
                 return;
             }
 
-            using CaptureRegion capture = _captureService.CaptureAround(cursorPosition);
-            OcrResult ocrResult = await _ocrEngine.RecognizeAsync(capture, captureCts.Token);
+            PointTextCaptureResult captureResult = await _pointTextCaptureEngine.CaptureAsync(cursorPosition, captureCts.Token);
             if (captureCts.IsCancellationRequested)
             {
                 return;
             }
 
-            OcrTextLine? line = ocrResult.FindNearestText(cursorPosition);
-            if (line is null || string.IsNullOrWhiteSpace(line.Text))
+            if (!captureResult.HasText)
             {
-                _bubbleWindow.ShowMessage(cursorPosition, "未识别到文字", ocrResult.StatusMessage);
+                _bubbleWindow.ShowMessage(cursorPosition, "未识别到文字", captureResult.StatusMessage);
                 return;
             }
 
-            string normalizedText = TextSanitizer.NormalizeForTranslation(line.Text);
-            if (!TextSanitizer.IsUsefulForTranslation(normalizedText))
-            {
-                _bubbleWindow.ShowMessage(cursorPosition, "未识别到可翻译文本", ocrResult.StatusMessage);
-                return;
-            }
-
-            await TranslateAndShowAsync(cursorPosition, normalizedText, ocrResult.StatusMessage, captureCts);
+            await TranslateAndShowAsync(cursorPosition, captureResult.Text!, captureResult.StatusMessage, captureCts);
         }
         catch (OperationCanceledException)
         {

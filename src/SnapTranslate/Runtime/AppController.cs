@@ -34,13 +34,15 @@ public sealed class AppController : IDisposable
             new PaddleOcrProcessEngine(options),
             new TesseractLibraryOcrEngine(options),
             new TesseractCliOcrEngine(options));
+        IPointTextCaptureEngine pointTextCaptureEngine = new FallbackPointTextCaptureEngine(
+            new UiAutomationPointTextCaptureEngine(),
+            new OcrPointTextCaptureEngine(captureService, ocrEngine));
         ITranslationService translationService = new CachedTranslationService(CreateTranslationService(options));
 
         return new HoverCaptureController(
             options,
-            captureService,
             new SelectedTextCaptureService(),
-            ocrEngine,
+            pointTextCaptureEngine,
             translationService,
             _bubbleWindow);
     }
