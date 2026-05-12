@@ -295,16 +295,18 @@ public sealed class SelectedTextCaptureService
 
     private static string? TryReadScintillaSelectedText(IntPtr scintillaWindow)
     {
+        string? bestText = TryReadScintillaExpandedSelectionToken(scintillaWindow);
+
         long selectedByteLength = SendMessage(scintillaWindow, SciGetSelText, IntPtr.Zero, IntPtr.Zero).ToInt64();
         if (selectedByteLength <= 0 || selectedByteLength > MaxScintillaSelectionBytes)
         {
-            return null;
+            return bestText;
         }
 
         _ = GetWindowThreadProcessId(scintillaWindow, out uint processId);
         if (processId == 0)
         {
-            return null;
+            return bestText;
         }
 
         IntPtr process = OpenProcess(
@@ -313,13 +315,13 @@ public sealed class SelectedTextCaptureService
             processId);
         if (process == IntPtr.Zero)
         {
-            return null;
+            return bestText;
         }
 
         IntPtr remoteBuffer = IntPtr.Zero;
         try
         {
-            int bufferSize = checked((int)selectedByteLength + 2);
+            int bufferSize = GetScintillaTextBufferSize(selectedByteLength);
             remoteBuffer = VirtualAllocEx(
                 process,
                 IntPtr.Zero,
@@ -328,7 +330,7 @@ public sealed class SelectedTextCaptureService
                 PageReadWrite);
             if (remoteBuffer == IntPtr.Zero)
             {
-                return null;
+                return bestText;
             }
 
             _ = SendMessage(scintillaWindow, SciGetSelText, IntPtr.Zero, remoteBuffer);
@@ -337,24 +339,23 @@ public sealed class SelectedTextCaptureService
             if (!ReadProcessMemory(process, remoteBuffer, buffer, buffer.Length, out IntPtr bytesRead) ||
                 bytesRead == IntPtr.Zero)
             {
-                return null;
+                return bestText;
             }
 
             int readLength = Math.Min(buffer.Length, checked((int)bytesRead.ToInt64()));
-            int textLength = Array.IndexOf(buffer, (byte)0, 0, readLength);
-            if (textLength < 0)
+            if (readLength <= 0)
             {
-                textLength = readLength;
-            }
-
-            if (textLength <= 0)
-            {
-                return null;
+                return bestText;
             }
 
             int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
-            string normalizedText = TextSanitizer.NormalizeForTranslation(DecodeScintillaText(buffer, textLength, codePage));
-            return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
+            string normalizedText = TextSanitizer.NormalizeForTranslation(DecodeScintillaText(buffer, readLength, codePage));
+            if (IsBetterSelectionText(normalizedText, bestText))
+            {
+                bestText = normalizedText;
+            }
+
+            return bestText;
         }
         finally
         {
@@ -365,6 +366,29 @@ public sealed class SelectedTextCaptureService
 
             _ = CloseHandle(process);
         }
+    }
+
+    private static string? TryReadScintillaExpandedSelectionToken(IntPtr scintillaWindow)
+    {
+        long selectionStart = SendMessage(scintillaWindow, SciGetSelectionStart, IntPtr.Zero, IntPtr.Zero).ToInt64();
+        long selectionEnd = SendMessage(scintillaWindow, SciGetSelectionEnd, IntPtr.Zero, IntPtr.Zero).ToInt64();
+        if (selectionStart < 0 || selectionEnd < 0 || selectionStart == selectionEnd)
+        {
+            return null;
+        }
+
+        long startPosition = Math.Min(selectionStart, selectionEnd);
+        long endPosition = Math.Max(selectionStart, selectionEnd);
+        long wordStart = SendMessage(scintillaWindow, SciWordStartPosition, new IntPtr(startPosition), new IntPtr(1)).ToInt64();
+        long wordEndSeed = Math.Max(startPosition, endPosition - 1);
+        long wordEnd = SendMessage(scintillaWindow, SciWordEndPosition, new IntPtr(wordEndSeed), new IntPtr(1)).ToInt64();
+        if (wordStart < 0 || wordEnd <= wordStart || wordEnd - wordStart > MaxScintillaSelectionBytes)
+        {
+            return null;
+        }
+
+        string normalizedText = TextSanitizer.NormalizeForTranslation(TryReadScintillaTextRange(scintillaWindow, wordStart, wordEnd) ?? string.Empty);
+        return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
     }
 
     private static string? TryReadScintillaTokenAtPoint(IntPtr scintillaWindow, NativePoint screenPoint)
@@ -417,7 +441,7 @@ public sealed class SelectedTextCaptureService
         IntPtr remoteRange = IntPtr.Zero;
         try
         {
-            int textBufferSize = checked((int)(end - start) + 1);
+            int textBufferSize = GetScintillaTextBufferSize(end - start);
             remoteText = VirtualAllocEx(process, IntPtr.Zero, (UIntPtr)textBufferSize, MemCommit | MemReserve, PageReadWrite);
             if (remoteText == IntPtr.Zero)
             {
@@ -451,15 +475,9 @@ public sealed class SelectedTextCaptureService
                 return null;
             }
 
-            int readLength = Math.Min(textBuffer.Length, checked((int)bytesRead.ToInt64()));
-            int textLength = Array.IndexOf(textBuffer, (byte)0, 0, readLength);
-            if (textLength < 0)
-            {
-                textLength = readLength;
-            }
-
             int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
-            return DecodeScintillaText(textBuffer, textLength, codePage);
+            int readLength = Math.Min(textBuffer.Length, checked((int)bytesRead.ToInt64()));
+            return DecodeScintillaText(textBuffer, readLength, codePage);
         }
         finally
         {
@@ -495,6 +513,12 @@ public sealed class SelectedTextCaptureService
         }
     }
 
+    private static int GetScintillaTextBufferSize(long characterCount)
+    {
+        long bufferSize = checked((characterCount * 4) + 8);
+        return checked((int)Math.Min(bufferSize, MaxScintillaSelectionBytes + 8L));
+    }
+
     private static string DecodeScintillaText(byte[] buffer, int length, int codePage)
     {
         if (length <= 0)
@@ -502,12 +526,77 @@ public sealed class SelectedTextCaptureService
             return string.Empty;
         }
 
-        if (TryDecodeWithWindowsCodePage(buffer, length, codePage > 0 ? (uint)codePage : CodePageAnsi, out string decodedText))
+        string bestText = string.Empty;
+
+        int singleByteLength = Array.IndexOf(buffer, (byte)0, 0, length);
+        if (singleByteLength < 0)
         {
-            return decodedText;
+            singleByteLength = length;
         }
 
-        return Encoding.UTF8.GetString(buffer, 0, length);
+        if (singleByteLength > 0 &&
+            TryDecodeWithWindowsCodePage(buffer, singleByteLength, codePage > 0 ? (uint)codePage : CodePageAnsi, out string decodedText))
+        {
+            bestText = decodedText;
+        }
+
+        int utf16LeLength = GetUtf16LeTextByteLength(buffer, length, codePage);
+        if (utf16LeLength > 0)
+        {
+            string unicodeText = Encoding.Unicode.GetString(buffer, 0, utf16LeLength);
+            if (IsBetterSelectionText(unicodeText, bestText))
+            {
+                bestText = unicodeText;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(bestText))
+        {
+            return bestText;
+        }
+
+        return Encoding.UTF8.GetString(buffer, 0, singleByteLength);
+    }
+
+    private static int GetUtf16LeTextByteLength(byte[] buffer, int length, int codePage)
+    {
+        bool likelyUtf16Le = codePage == CodePageUtf16Le || LooksLikeUtf16Le(buffer, length);
+        if (!likelyUtf16Le)
+        {
+            return 0;
+        }
+
+        int evenLength = length - (length % 2);
+        for (int index = 1; index + 1 < evenLength; index++)
+        {
+            if (buffer[index] == 0 && buffer[index + 1] == 0)
+            {
+                return index % 2 == 1 ? index + 1 : index;
+            }
+        }
+
+        return evenLength;
+    }
+
+    private static bool LooksLikeUtf16Le(byte[] buffer, int length)
+    {
+        int sampleLength = Math.Min(length, 64);
+        int pairCount = sampleLength / 2;
+        if (pairCount < 2)
+        {
+            return false;
+        }
+
+        int oddZeroCount = 0;
+        for (int index = 1; index < sampleLength; index += 2)
+        {
+            if (buffer[index] == 0)
+            {
+                oddZeroCount++;
+            }
+        }
+
+        return oddZeroCount >= Math.Max(2, pairCount / 2);
     }
 
     private static bool TryDecodeWithWindowsCodePage(byte[] buffer, int length, uint codePage, out string decodedText)
@@ -716,9 +805,12 @@ public sealed class SelectedTextCaptureService
     private const uint SciPositionFromPointClose = 2023;
     private const uint SciGetTextRangeFull = 2039;
     private const uint SciGetCodePage = 2137;
+    private const uint SciGetSelectionStart = 2143;
+    private const uint SciGetSelectionEnd = 2145;
     private const uint SciWordStartPosition = 2266;
     private const uint SciWordEndPosition = 2267;
     private const uint CodePageAnsi = 0;
+    private const int CodePageUtf16Le = 1200;
     private const uint ProcessVmOperation = 0x0008;
     private const uint ProcessVmRead = 0x0010;
     private const uint ProcessVmWrite = 0x0020;
