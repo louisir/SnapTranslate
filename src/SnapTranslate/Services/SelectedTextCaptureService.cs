@@ -242,6 +242,12 @@ public sealed class SelectedTextCaptureService
             {
                 bestText = foregroundText;
             }
+
+            string? desktopText = TryCaptureVisibleDesktopScintillaSelectedText();
+            if (IsBetterSelectionText(desktopText, bestText))
+            {
+                bestText = desktopText;
+            }
         }
         catch
         {
@@ -277,6 +283,61 @@ public sealed class SelectedTextCaptureService
             IntPtr.Zero);
 
         return bestText;
+    }
+
+    private static string? TryCaptureVisibleDesktopScintillaSelectedText()
+    {
+        string? bestText = null;
+        _ = EnumWindows(
+            (window, _) =>
+            {
+                if (!IsWindowVisible(window))
+                {
+                    return true;
+                }
+
+                string? text = TryCaptureScintillaSelectedTextInWindow(window);
+                if (IsBetterSelectionText(text, bestText))
+                {
+                    bestText = text;
+                }
+
+                return true;
+            },
+            IntPtr.Zero);
+
+        return bestText;
+    }
+
+    private static string? TryCaptureScintillaSelectedTextInWindow(IntPtr rootWindow)
+    {
+        string? bestText = null;
+        TryUseScintillaWindow(rootWindow, ref bestText);
+
+        _ = EnumChildWindows(
+            rootWindow,
+            (window, _) =>
+            {
+                TryUseScintillaWindow(window, ref bestText);
+                return true;
+            },
+            IntPtr.Zero);
+
+        return bestText;
+    }
+
+    private static void TryUseScintillaWindow(IntPtr window, ref string? bestText)
+    {
+        if (!IsScintillaWindow(window))
+        {
+            return;
+        }
+
+        string? text = TryReadScintillaSelectedText(window);
+        if (IsBetterSelectionText(text, bestText))
+        {
+            bestText = text;
+        }
     }
 
     private static bool IsScintillaWindow(IntPtr window)
@@ -516,7 +577,13 @@ public sealed class SelectedTextCaptureService
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumChildWindowProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
     private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildWindowProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetParent(IntPtr hWnd);
