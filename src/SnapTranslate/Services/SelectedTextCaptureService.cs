@@ -30,12 +30,20 @@ public sealed class SelectedTextCaptureService
     private const int MaxAutomationParentDepth = 6;
     private const string ClipboardProbePrefix = "SNAPTRANSLATE_CLIPBOARD_PROBE_";
 
-    public async Task<string?> TryCaptureSelectedTextAsync(CancellationToken cancellationToken, bool allowClipboardFallback = true)
+    public async Task<string?> TryCaptureSelectedTextAsync(
+        CancellationToken cancellationToken,
+        bool allowClipboardFallback = true,
+        bool requireDirectTextForClipboardFallback = false)
     {
         string? directText = await TryCaptureDirectSelectedTextAsync(cancellationToken);
         if (!allowClipboardFallback)
         {
             return directText;
+        }
+
+        if (requireDirectTextForClipboardFallback && string.IsNullOrWhiteSpace(directText))
+        {
+            return null;
         }
 
         string? clipboardText = await TryCaptureClipboardSelectedTextAsync(cancellationToken);
@@ -91,14 +99,21 @@ public sealed class SelectedTextCaptureService
 
     private static string? TryCaptureDirectSelectedText()
     {
+        string? bestText = null;
+
         string? scintillaText = TryCaptureScintillaSelectedText();
-        if (!string.IsNullOrWhiteSpace(scintillaText))
+        if (IsBetterSelectionText(scintillaText, bestText))
         {
-            return scintillaText;
+            bestText = scintillaText;
         }
 
         string? automationText = TryCaptureAutomationSelectedText();
-        return string.IsNullOrWhiteSpace(automationText) ? null : automationText;
+        if (IsBetterSelectionText(automationText, bestText))
+        {
+            bestText = automationText;
+        }
+
+        return bestText;
     }
 
     private static bool IsBetterSelectionText(string? candidateText, string? currentText)
@@ -198,6 +213,8 @@ public sealed class SelectedTextCaptureService
 
     private static string? TryCaptureScintillaSelectedText()
     {
+        string? bestText = null;
+
         try
         {
             if (!GetCursorPos(out NativePoint cursorPosition))
@@ -210,19 +227,27 @@ public sealed class SelectedTextCaptureService
             {
                 if (IsScintillaWindow(window))
                 {
-                    return TryReadScintillaSelectedText(window);
+                    string? text = TryReadScintillaSelectedText(window);
+                    if (IsBetterSelectionText(text, bestText))
+                    {
+                        bestText = text;
+                    }
                 }
 
                 window = GetParent(window);
             }
 
-            return TryCaptureForegroundScintillaSelectedText();
+            string? foregroundText = TryCaptureForegroundScintillaSelectedText();
+            if (IsBetterSelectionText(foregroundText, bestText))
+            {
+                bestText = foregroundText;
+            }
         }
         catch
         {
         }
 
-        return null;
+        return bestText;
     }
 
     private static string? TryCaptureForegroundScintillaSelectedText()

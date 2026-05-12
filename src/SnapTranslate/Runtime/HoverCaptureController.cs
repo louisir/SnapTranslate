@@ -225,7 +225,8 @@ public sealed class HoverCaptureController : IDisposable
 
             selectedText = await _selectedTextCaptureService.TryCaptureSelectedTextAsync(
                 captureCts.Token,
-                allowClipboardFallback: false);
+                allowClipboardFallback: true,
+                requireDirectTextForClipboardFallback: true);
             if (captureCts.IsCancellationRequested)
             {
                 return;
