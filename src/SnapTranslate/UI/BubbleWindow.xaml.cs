@@ -14,10 +14,20 @@ public partial class BubbleWindow : Window
 
     public void ShowResult(DrawingPoint cursorPosition, string sourceText, string translatedText, string? statusMessage)
     {
+        ShowResult(cursorPosition, null, sourceText, translatedText, statusMessage);
+    }
+
+    public void ShowResult(
+        DrawingPoint cursorPosition,
+        Rectangle? selectionBounds,
+        string sourceText,
+        string translatedText,
+        string? statusMessage)
+    {
         SourceText.Text = sourceText;
         TranslatedText.Text = translatedText;
         SetStatus(statusMessage);
-        ShowNear(cursorPosition);
+        ShowNear(cursorPosition, selectionBounds);
     }
 
     public void ShowMessage(DrawingPoint cursorPosition, string title, string? details)
@@ -34,19 +44,50 @@ public partial class BubbleWindow : Window
         StatusText.Visibility = string.IsNullOrWhiteSpace(statusMessage) ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private void ShowNear(DrawingPoint cursorPosition)
+    private void ShowNear(DrawingPoint cursorPosition, Rectangle? selectionBounds = null)
     {
-        double left = cursorPosition.X + 16;
-        double top = cursorPosition.Y + 18;
+        UpdateLayout();
+
         Forms.Screen screen = Forms.Screen.FromPoint(cursorPosition);
         Rectangle workingArea = screen.WorkingArea;
-        if (left > workingArea.Right - Width - 12)
+        double width = ActualWidth > 0 ? ActualWidth : Width;
+        double height = ActualHeight > 0 ? ActualHeight : 160;
+        double left;
+        double top;
+
+        if (selectionBounds is { IsEmpty: false } bounds)
         {
-            left = cursorPosition.X - Width - 16;
+            left = bounds.Left;
+            top = bounds.Bottom + 18;
+            if (top + height > workingArea.Bottom - 8)
+            {
+                top = bounds.Top - height - 18;
+            }
+        }
+        else
+        {
+            left = cursorPosition.X + 16;
+            top = cursorPosition.Y + 18;
+            if (left > workingArea.Right - width - 12)
+            {
+                left = cursorPosition.X - width - 16;
+            }
         }
 
-        Left = left < workingArea.Left ? workingArea.Left + 8 : left;
-        Top = top < workingArea.Top ? workingArea.Top + 8 : top;
+        Left = Clamp(left, workingArea.Left + 8, workingArea.Right - width - 8);
+        Top = Clamp(top, workingArea.Top + 8, workingArea.Bottom - height - 8);
         Show();
+        Topmost = false;
+        Topmost = true;
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        if (max < min)
+        {
+            return min;
+        }
+
+        return value < min ? min : value > max ? max : value;
     }
 }

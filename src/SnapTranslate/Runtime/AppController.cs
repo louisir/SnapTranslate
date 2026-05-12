@@ -124,7 +124,7 @@ public sealed class AppController : IDisposable
     {
         _application.Dispatcher.BeginInvoke(async () =>
         {
-            await _hoverController.TranslateExternalTextAsync(e.Text, e.ScreenPoint, "来自浏览器扩展");
+            await _hoverController.TranslateExternalTextAsync(e.Text, e.ScreenPoint, e.SelectionBounds, "来自浏览器扩展");
         });
     }
 

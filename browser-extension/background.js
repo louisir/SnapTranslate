@@ -13,7 +13,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     body: JSON.stringify({
       text: message.text,
       screenX: message.screenX,
-      screenY: message.screenY
+      screenY: message.screenY,
+      rectLeft: message.rectLeft,
+      rectTop: message.rectTop,
+      rectRight: message.rectRight,
+      rectBottom: message.rectBottom
     })
   })
     .then((response) => {

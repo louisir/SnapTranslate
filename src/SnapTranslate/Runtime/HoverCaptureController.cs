@@ -15,6 +15,7 @@ public sealed class HoverCaptureController : IDisposable
 {
     private static readonly TimeSpan SelectionCandidateWindow = TimeSpan.FromSeconds(4);
     private const int DragSelectionThreshold = 6;
+    private static readonly TimeSpan ExternalBubbleProtection = TimeSpan.FromSeconds(2);
 
     private readonly AppOptions _options;
     private readonly SelectedTextCaptureService _selectedTextCaptureService;
@@ -32,6 +33,7 @@ public sealed class HoverCaptureController : IDisposable
     private bool _leftMouseDown;
     private bool _dragDetected;
     private bool _selectionCaptureAttempted;
+    private DateTimeOffset _bubbleProtectedUntil = DateTimeOffset.MinValue;
     private Point _mouseDownPosition;
     private Point _lastClickReleasePosition;
     private DateTimeOffset _lastClickReleasedAt = DateTimeOffset.MinValue;
@@ -58,7 +60,7 @@ public sealed class HoverCaptureController : IDisposable
 
     public bool IsEnabled { get; set; } = true;
 
-    public async Task TranslateExternalTextAsync(string text, Point cursorPosition, string sourceStatus)
+    public async Task TranslateExternalTextAsync(string text, Point cursorPosition, Rectangle? selectionBounds, string sourceStatus)
     {
         if (!IsEnabled)
         {
@@ -75,13 +77,18 @@ public sealed class HoverCaptureController : IDisposable
         using CancellationTokenSource captureCts = new();
         _currentCapture = captureCts;
         _isCapturing = true;
+        _leftMouseDown = false;
+        _selectionCaptureAttempted = true;
+        _selectionCandidateUntil = DateTimeOffset.MinValue;
+        _bubbleProtectedUntil = DateTimeOffset.UtcNow + ExternalBubbleProtection;
         _lastPosition = cursorPosition;
         _lastMovementAt = DateTimeOffset.UtcNow;
         _hoverTriggered = true;
 
         try
         {
-            await TranslateAndShowAsync(cursorPosition, normalizedText, sourceStatus, captureCts);
+            await TranslateAndShowAsync(cursorPosition, selectionBounds, normalizedText, sourceStatus, captureCts);
+            _bubbleProtectedUntil = DateTimeOffset.UtcNow + ExternalBubbleProtection;
         }
         catch (OperationCanceledException)
         {
@@ -161,8 +168,12 @@ public sealed class HoverCaptureController : IDisposable
             _lastPosition = currentPosition;
             _lastMovementAt = DateTimeOffset.UtcNow;
             _hoverTriggered = false;
-            _bubbleWindow.Hide();
-            CancelCurrentCapture();
+            if (DateTimeOffset.UtcNow > _bubbleProtectedUntil)
+            {
+                _bubbleWindow.Hide();
+                CancelCurrentCapture();
+            }
+
             return;
         }
 
@@ -438,6 +449,16 @@ public sealed class HoverCaptureController : IDisposable
         string? sourceStatus,
         CancellationTokenSource captureCts)
     {
+        await TranslateAndShowAsync(cursorPosition, null, sourceText, sourceStatus, captureCts);
+    }
+
+    private async Task TranslateAndShowAsync(
+        Point cursorPosition,
+        Rectangle? selectionBounds,
+        string sourceText,
+        string? sourceStatus,
+        CancellationTokenSource captureCts)
+    {
         TranslationResult translation = await _translationService.TranslateAsync(sourceText, captureCts.Token);
         if (captureCts.IsCancellationRequested)
         {
@@ -446,6 +467,7 @@ public sealed class HoverCaptureController : IDisposable
 
         _bubbleWindow.ShowResult(
             cursorPosition,
+            selectionBounds,
             sourceText,
             translation.TranslatedText,
             CombineStatus(sourceStatus, translation.StatusMessage));

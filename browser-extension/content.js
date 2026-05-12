@@ -35,7 +35,9 @@ function sendSelection(event) {
     return;
   }
 
-  const point = getScreenPoint(event, selection);
+  const rect = getSelectionRect(selection);
+  const point = getScreenPoint(event, rect);
+  const screenRect = getScreenRect(event, rect);
   const key = `${text}\n${point.screenX},${point.screenY}`;
   const now = Date.now();
   if (key === lastSentKey && now - lastSentAt < 1200) {
@@ -49,7 +51,11 @@ function sendSelection(event) {
     type: "snaptranslate.selection",
     text,
     screenX: point.screenX,
-    screenY: point.screenY
+    screenY: point.screenY,
+    rectLeft: screenRect?.left ?? null,
+    rectTop: screenRect?.top ?? null,
+    rectRight: screenRect?.right ?? null,
+    rectBottom: screenRect?.bottom ?? null
   });
 }
 
@@ -67,7 +73,7 @@ function isUsefulText(value) {
   return /[\p{L}\p{N}\u4e00-\u9fff]/u.test(value);
 }
 
-function getScreenPoint(event, selection) {
+function getScreenPoint(event, selectionRect) {
   if (Number.isFinite(event.screenX) && Number.isFinite(event.screenY)) {
     return {
       screenX: Math.round(event.screenX),
@@ -75,17 +81,38 @@ function getScreenPoint(event, selection) {
     };
   }
 
-  const rect = getSelectionRect(selection);
-  if (rect) {
+  const screenRect = getScreenRect(event, selectionRect);
+  if (screenRect) {
     return {
-      screenX: Math.round(window.screenX + rect.left),
-      screenY: Math.round(window.screenY + rect.top)
+      screenX: Math.round(screenRect.right),
+      screenY: Math.round(screenRect.bottom)
     };
   }
 
   return {
     screenX: Math.round(window.screenX),
     screenY: Math.round(window.screenY)
+  };
+}
+
+function getScreenRect(event, rect) {
+  if (!rect) {
+    return null;
+  }
+
+  const hasMouseCoordinates =
+    Number.isFinite(event.screenX) &&
+    Number.isFinite(event.screenY) &&
+    Number.isFinite(event.clientX) &&
+    Number.isFinite(event.clientY);
+  const offsetX = hasMouseCoordinates ? event.screenX - event.clientX : window.screenX;
+  const offsetY = hasMouseCoordinates ? event.screenY - event.clientY : window.screenY;
+
+  return {
+    left: Math.round(offsetX + rect.left),
+    top: Math.round(offsetY + rect.top),
+    right: Math.round(offsetX + rect.right),
+    bottom: Math.round(offsetY + rect.bottom)
   };
 }
 

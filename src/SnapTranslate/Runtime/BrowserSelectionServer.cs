@@ -117,7 +117,8 @@ public sealed class BrowserSelectionServer : IDisposable
             }
 
             Point screenPoint = new(payload?.ScreenX ?? 0, payload?.ScreenY ?? 0);
-            SelectionReceived?.Invoke(this, new BrowserSelectionReceivedEventArgs(text, screenPoint));
+            Rectangle? selectionBounds = payload is null ? null : CreateSelectionBounds(payload);
+            SelectionReceived?.Invoke(this, new BrowserSelectionReceivedEventArgs(text, screenPoint, selectionBounds));
 
             context.Response.StatusCode = (int)HttpStatusCode.OK;
             await WriteJsonAsync(context.Response, "{\"ok\":true}", cancellationToken);
@@ -154,8 +155,34 @@ public sealed class BrowserSelectionServer : IDisposable
         await response.OutputStream.WriteAsync(bytes, cancellationToken);
     }
 
+    private static Rectangle? CreateSelectionBounds(BrowserSelectionPayload payload)
+    {
+        if (payload.RectLeft is null ||
+            payload.RectTop is null ||
+            payload.RectRight is null ||
+            payload.RectBottom is null)
+        {
+            return null;
+        }
+
+        int left = Math.Min(payload.RectLeft.Value, payload.RectRight.Value);
+        int top = Math.Min(payload.RectTop.Value, payload.RectBottom.Value);
+        int right = Math.Max(payload.RectLeft.Value, payload.RectRight.Value);
+        int bottom = Math.Max(payload.RectTop.Value, payload.RectBottom.Value);
+        if (right <= left || bottom <= top)
+        {
+            return null;
+        }
+
+        return new Rectangle(left, top, right - left, bottom - top);
+    }
+
     private sealed record BrowserSelectionPayload(
         [property: JsonPropertyName("text")] string? Text,
         [property: JsonPropertyName("screenX")] int ScreenX,
-        [property: JsonPropertyName("screenY")] int ScreenY);
+        [property: JsonPropertyName("screenY")] int ScreenY,
+        [property: JsonPropertyName("rectLeft")] int? RectLeft,
+        [property: JsonPropertyName("rectTop")] int? RectTop,
+        [property: JsonPropertyName("rectRight")] int? RectRight,
+        [property: JsonPropertyName("rectBottom")] int? RectBottom);
 }
