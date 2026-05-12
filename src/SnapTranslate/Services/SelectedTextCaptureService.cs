@@ -13,7 +13,7 @@ namespace SnapTranslate.Services;
 public sealed class SelectedTextCaptureService
 {
     private const int ClipboardSetRetryCount = 3;
-    private const int PreCopyDelayMs = 80;
+    private const int PreCopyDelayMs = 160;
     private const int CopySettleDelayMs = 220;
     private const string ClipboardProbePrefix = "SNAPTRANSLATE_CLIPBOARD_PROBE_";
 

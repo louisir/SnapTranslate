@@ -23,9 +23,11 @@ public sealed class HoverCaptureController : IDisposable
     private readonly ITranslationService _translationService;
     private readonly BubbleWindow _bubbleWindow;
     private readonly DispatcherTimer _timer;
+    private readonly GlobalMouseHook _mouseHook;
     private Point _lastPosition;
     private DateTimeOffset _lastMovementAt = DateTimeOffset.UtcNow;
     private CancellationTokenSource? _currentCapture;
+    private bool _mouseHookStarted;
     private bool _hoverTriggered;
     private bool _isCapturing;
     private bool _leftMouseDown;
@@ -53,15 +55,32 @@ public sealed class HoverCaptureController : IDisposable
         _lastPosition = Forms.Cursor.Position;
         _timer = new DispatcherTimer { Interval = _options.PollInterval };
         _timer.Tick += OnTimerTick;
+        _mouseHook = new GlobalMouseHook();
+        _mouseHook.MouseAction += OnGlobalMouseAction;
     }
 
     public bool IsEnabled { get; set; } = true;
-    public void Start() => _timer.Start();
+
+    public void Start()
+    {
+        _timer.Start();
+        try
+        {
+            _mouseHook.Start();
+            _mouseHookStarted = true;
+        }
+        catch
+        {
+            _mouseHookStarted = false;
+        }
+    }
 
     public void Dispose()
     {
         _timer.Stop();
         _timer.Tick -= OnTimerTick;
+        _mouseHook.MouseAction -= OnGlobalMouseAction;
+        _mouseHook.Dispose();
         CancelCurrentCapture();
     }
 
@@ -74,7 +93,14 @@ public sealed class HoverCaptureController : IDisposable
         }
 
         Point currentPosition = Forms.Cursor.Position;
-        if (UpdateSelectionTracking(currentPosition))
+        if (!_mouseHookStarted && UpdateSelectionTracking(currentPosition))
+        {
+            _bubbleWindow.Hide();
+            CancelCurrentCapture();
+            return;
+        }
+
+        if (_leftMouseDown)
         {
             _bubbleWindow.Hide();
             CancelCurrentCapture();
@@ -183,16 +209,44 @@ public sealed class HoverCaptureController : IDisposable
         _currentCapture = null;
     }
 
+    private void OnGlobalMouseAction(object? sender, GlobalMouseEventArgs e)
+    {
+        if (!_timer.Dispatcher.CheckAccess())
+        {
+            _timer.Dispatcher.BeginInvoke(() => HandleGlobalMouseAction(e));
+            return;
+        }
+
+        HandleGlobalMouseAction(e);
+    }
+
+    private void HandleGlobalMouseAction(GlobalMouseEventArgs e)
+    {
+        if (!IsEnabled)
+        {
+            return;
+        }
+
+        if (e.Action == GlobalMouseAction.LeftButtonDown)
+        {
+            BeginSelectionTracking(e.Position);
+            _bubbleWindow.Hide();
+            CancelCurrentCapture();
+            return;
+        }
+
+        if (e.Action == GlobalMouseAction.LeftButtonUp)
+        {
+            CompleteSelectionTracking(e.Position, triggerImmediately: true);
+        }
+    }
+
     private bool UpdateSelectionTracking(Point currentPosition)
     {
         bool isLeftDown = (Forms.Control.MouseButtons & Forms.MouseButtons.Left) == Forms.MouseButtons.Left;
         if (isLeftDown && !_leftMouseDown)
         {
-            _leftMouseDown = true;
-            _dragDetected = false;
-            _selectionCaptureAttempted = false;
-            _selectionCandidateUntil = DateTimeOffset.MinValue;
-            _mouseDownPosition = currentPosition;
+            BeginSelectionTracking(currentPosition);
         }
         else if (isLeftDown)
         {
@@ -205,28 +259,55 @@ public sealed class HoverCaptureController : IDisposable
         }
         else if (_leftMouseDown)
         {
-            _leftMouseDown = false;
-            if (_dragDetected)
-            {
-                MarkSelectionCandidate();
-            }
-            else if (IsDoubleClickRelease(currentPosition))
-            {
-                MarkSelectionCandidate();
-            }
-
-            _lastClickReleasedAt = DateTimeOffset.UtcNow;
-            _lastClickReleasePosition = currentPosition;
-            _dragDetected = false;
+            CompleteSelectionTracking(currentPosition, triggerImmediately: false);
         }
 
         return isLeftDown;
+    }
+
+    private void BeginSelectionTracking(Point currentPosition)
+    {
+        _leftMouseDown = true;
+        _dragDetected = false;
+        _selectionCaptureAttempted = false;
+        _selectionCandidateUntil = DateTimeOffset.MinValue;
+        _mouseDownPosition = currentPosition;
+    }
+
+    private void CompleteSelectionTracking(Point currentPosition, bool triggerImmediately)
+    {
+        if (!_leftMouseDown)
+        {
+            return;
+        }
+
+        _leftMouseDown = false;
+        _dragDetected = _dragDetected || IsDragRelease(currentPosition);
+        if (_dragDetected || IsDoubleClickRelease(currentPosition))
+        {
+            MarkSelectionCandidate();
+            if (triggerImmediately)
+            {
+                _ = TranslateSelectionCandidateAsync(currentPosition);
+            }
+        }
+
+        _lastClickReleasedAt = DateTimeOffset.UtcNow;
+        _lastClickReleasePosition = currentPosition;
+        _dragDetected = false;
     }
 
     private void MarkSelectionCandidate()
     {
         _selectionCandidateUntil = DateTimeOffset.UtcNow + SelectionCandidateWindow;
         _selectionCaptureAttempted = false;
+    }
+
+    private bool IsDragRelease(Point currentPosition)
+    {
+        int dx = Math.Abs(currentPosition.X - _mouseDownPosition.X);
+        int dy = Math.Abs(currentPosition.Y - _mouseDownPosition.Y);
+        return dx >= DragSelectionThreshold || dy >= DragSelectionThreshold;
     }
 
     private bool IsDoubleClickRelease(Point currentPosition)
@@ -261,6 +342,19 @@ public sealed class HoverCaptureController : IDisposable
         _selectionCaptureAttempted = true;
         _selectionCandidateUntil = DateTimeOffset.MinValue;
         return true;
+    }
+
+    private async Task TranslateSelectionCandidateAsync(Point cursorPosition)
+    {
+        if (_isCapturing || !TryConsumeSelectionCandidate())
+        {
+            return;
+        }
+
+        _lastPosition = cursorPosition;
+        _lastMovementAt = DateTimeOffset.UtcNow;
+        _hoverTriggered = true;
+        await TranslateSelectedTextAndShowAsync(cursorPosition);
     }
 
     private async Task TranslateSelectedTextAndShowAsync(Point cursorPosition)
