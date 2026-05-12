@@ -18,9 +18,10 @@ namespace SnapTranslate.Services;
 public sealed class SelectedTextCaptureService
 {
     private const int ClipboardSetRetryCount = 3;
-    private const int PreCopyDelayMs = 220;
     private const int ClipboardPollDelayMs = 60;
     private const int ClipboardWaitTimeoutMs = 1200;
+    private const int DirectSelectionProbeCount = 4;
+    private const int DirectSelectionProbeDelayMs = 80;
     private const int MaxSelectionTextLength = 4000;
     private const int MaxScintillaSelectionBytes = (MaxSelectionTextLength * 4) + 8;
     private const int MaxScintillaParentDepth = 5;
@@ -30,18 +31,10 @@ public sealed class SelectedTextCaptureService
 
     public async Task<string?> TryCaptureSelectedTextAsync(CancellationToken cancellationToken)
     {
-        await Task.Delay(PreCopyDelayMs, cancellationToken);
-
-        string? scintillaText = TryCaptureScintillaSelectedText();
-        if (!string.IsNullOrWhiteSpace(scintillaText))
+        string? directText = await TryCaptureDirectSelectedTextAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(directText))
         {
-            return scintillaText;
-        }
-
-        string? automationText = TryCaptureAutomationSelectedText();
-        if (!string.IsNullOrWhiteSpace(automationText))
-        {
-            return automationText;
+            return directText;
         }
 
         WpfDataObject? originalData = TryGetClipboardDataObject();
@@ -66,6 +59,54 @@ public sealed class SelectedTextCaptureService
         {
             RestoreClipboard(originalData);
         }
+    }
+
+    private static async Task<string?> TryCaptureDirectSelectedTextAsync(CancellationToken cancellationToken)
+    {
+        string? bestText = null;
+
+        for (int attempt = 0; attempt < DirectSelectionProbeCount; attempt++)
+        {
+            string? candidateText = TryCaptureDirectSelectedText();
+            if (IsBetterSelectionText(candidateText, bestText))
+            {
+                bestText = candidateText;
+            }
+
+            if (attempt < DirectSelectionProbeCount - 1)
+            {
+                await Task.Delay(DirectSelectionProbeDelayMs, cancellationToken);
+            }
+        }
+
+        return bestText;
+    }
+
+    private static string? TryCaptureDirectSelectedText()
+    {
+        string? scintillaText = TryCaptureScintillaSelectedText();
+        if (!string.IsNullOrWhiteSpace(scintillaText))
+        {
+            return scintillaText;
+        }
+
+        string? automationText = TryCaptureAutomationSelectedText();
+        return string.IsNullOrWhiteSpace(automationText) ? null : automationText;
+    }
+
+    private static bool IsBetterSelectionText(string? candidateText, string? currentText)
+    {
+        if (string.IsNullOrWhiteSpace(candidateText))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(currentText))
+        {
+            return true;
+        }
+
+        return candidateText.Length > currentText.Length;
     }
 
     private static async Task<string?> WaitForCopiedTextAsync(

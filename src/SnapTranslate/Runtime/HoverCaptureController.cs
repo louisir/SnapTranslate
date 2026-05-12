@@ -279,7 +279,7 @@ public sealed class HoverCaptureController : IDisposable
             return;
         }
 
-        if (e.Action == GlobalMouseAction.LeftButtonDown)
+        if (e.Action is GlobalMouseAction.LeftButtonDown or GlobalMouseAction.LeftButtonDoubleClick)
         {
             BeginSelectionTracking(e.Position);
             _bubbleWindow.Hide();

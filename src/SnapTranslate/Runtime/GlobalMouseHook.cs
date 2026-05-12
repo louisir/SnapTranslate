@@ -12,6 +12,7 @@ internal sealed class GlobalMouseHook : IDisposable
     private const int HcAction = 0;
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
+    private const int WmLButtonDoubleClick = 0x0203;
 
     private HookProc? _hookProc;
     private IntPtr _hookId;
@@ -56,6 +57,7 @@ internal sealed class GlobalMouseHook : IDisposable
             {
                 WmLButtonDown => GlobalMouseAction.LeftButtonDown,
                 WmLButtonUp => GlobalMouseAction.LeftButtonUp,
+                WmLButtonDoubleClick => GlobalMouseAction.LeftButtonDoubleClick,
                 _ => null
             };
 
@@ -104,7 +106,8 @@ internal sealed class GlobalMouseHook : IDisposable
 internal enum GlobalMouseAction
 {
     LeftButtonDown,
-    LeftButtonUp
+    LeftButtonUp,
+    LeftButtonDoubleClick
 }
 
 internal sealed record GlobalMouseEventArgs(GlobalMouseAction Action, Point Position);
