@@ -30,9 +30,14 @@ public sealed class SelectedTextCaptureService
     private const int MaxAutomationParentDepth = 6;
     private const string ClipboardProbePrefix = "SNAPTRANSLATE_CLIPBOARD_PROBE_";
 
-    public async Task<string?> TryCaptureSelectedTextAsync(CancellationToken cancellationToken)
+    public async Task<string?> TryCaptureSelectedTextAsync(CancellationToken cancellationToken, bool allowClipboardFallback = true)
     {
         string? directText = await TryCaptureDirectSelectedTextAsync(cancellationToken);
+        if (!allowClipboardFallback)
+        {
+            return directText;
+        }
+
         string? clipboardText = await TryCaptureClipboardSelectedTextAsync(cancellationToken);
         return IsBetterSelectionText(clipboardText, directText) ? clipboardText : directText;
     }
@@ -197,7 +202,7 @@ public sealed class SelectedTextCaptureService
         {
             if (!GetCursorPos(out NativePoint cursorPosition))
             {
-                return null;
+                return TryCaptureForegroundScintillaSelectedText();
             }
 
             IntPtr window = WindowFromPoint(cursorPosition);
@@ -210,12 +215,43 @@ public sealed class SelectedTextCaptureService
 
                 window = GetParent(window);
             }
+
+            return TryCaptureForegroundScintillaSelectedText();
         }
         catch
         {
         }
 
         return null;
+    }
+
+    private static string? TryCaptureForegroundScintillaSelectedText()
+    {
+        IntPtr foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        string? bestText = null;
+        _ = EnumChildWindows(
+            foregroundWindow,
+            (window, _) =>
+            {
+                if (IsScintillaWindow(window))
+                {
+                    string? text = TryReadScintillaSelectedText(window);
+                    if (IsBetterSelectionText(text, bestText))
+                    {
+                        bestText = text;
+                    }
+                }
+
+                return true;
+            },
+            IntPtr.Zero);
+
+        return bestText;
     }
 
     private static bool IsScintillaWindow(IntPtr window)
@@ -452,6 +488,12 @@ public sealed class SelectedTextCaptureService
     private static extern IntPtr WindowFromPoint(NativePoint point);
 
     [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildWindowProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr GetParent(IntPtr hWnd);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -515,6 +557,8 @@ public sealed class SelectedTextCaptureService
     private const ushort VirtualKeyC = 0x43;
     private const uint InputKeyboard = 1;
     private const uint KeyEventKeyUp = 0x0002;
+
+    private delegate bool EnumChildWindowProc(IntPtr window, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint

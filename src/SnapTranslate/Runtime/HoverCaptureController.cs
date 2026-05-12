@@ -223,6 +223,20 @@ public sealed class HoverCaptureController : IDisposable
                 return;
             }
 
+            selectedText = await _selectedTextCaptureService.TryCaptureSelectedTextAsync(
+                captureCts.Token,
+                allowClipboardFallback: false);
+            if (captureCts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedText))
+            {
+                await TranslateAndShowAsync(cursorPosition, selectedText, "来自当前选区", captureCts);
+                return;
+            }
+
             PointTextCaptureResult captureResult = await _pointTextCaptureEngine.CaptureAsync(cursorPosition, captureCts.Token);
             if (captureCts.IsCancellationRequested)
             {
