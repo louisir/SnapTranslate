@@ -14,6 +14,7 @@ public sealed class AppController : IDisposable
 {
     private readonly WpfApplication _application;
     private readonly BubbleWindow _bubbleWindow;
+    private readonly BrowserSelectionServer _browserSelectionServer;
     private readonly Forms.NotifyIcon _notifyIcon;
     private AppSettings _settings;
     private HoverCaptureController _hoverController;
@@ -24,6 +25,8 @@ public sealed class AppController : IDisposable
         _settings = AppSettings.Load();
         _bubbleWindow = new BubbleWindow();
         _hoverController = CreateHoverController(_settings.ToOptions());
+        _browserSelectionServer = new BrowserSelectionServer();
+        _browserSelectionServer.SelectionReceived += OnBrowserSelectionReceived;
         _notifyIcon = CreateNotifyIcon();
     }
 
@@ -51,10 +54,19 @@ public sealed class AppController : IDisposable
     {
         _notifyIcon.Visible = true;
         _hoverController.Start();
+        try
+        {
+            _browserSelectionServer.Start();
+        }
+        catch
+        {
+        }
     }
 
     public void Dispose()
     {
+        _browserSelectionServer.SelectionReceived -= OnBrowserSelectionReceived;
+        _browserSelectionServer.Dispose();
         _hoverController.Dispose();
         _bubbleWindow.Close();
         _notifyIcon.Visible = false;
@@ -106,6 +118,14 @@ public sealed class AppController : IDisposable
             Icon = CreateTrayIcon(),
             ContextMenuStrip = menu
         };
+    }
+
+    private void OnBrowserSelectionReceived(object? sender, BrowserSelectionReceivedEventArgs e)
+    {
+        _application.Dispatcher.BeginInvoke(async () =>
+        {
+            await _hoverController.TranslateExternalTextAsync(e.Text, e.ScreenPoint, "来自浏览器扩展");
+        });
     }
 
     private void ShowSettingsWindow()

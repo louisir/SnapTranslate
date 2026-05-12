@@ -58,6 +58,49 @@ public sealed class HoverCaptureController : IDisposable
 
     public bool IsEnabled { get; set; } = true;
 
+    public async Task TranslateExternalTextAsync(string text, Point cursorPosition, string sourceStatus)
+    {
+        if (!IsEnabled)
+        {
+            return;
+        }
+
+        string normalizedText = TextSanitizer.NormalizeForTranslation(text);
+        if (!TextSanitizer.IsUsefulForTranslation(normalizedText))
+        {
+            return;
+        }
+
+        CancelCurrentCapture();
+        using CancellationTokenSource captureCts = new();
+        _currentCapture = captureCts;
+        _isCapturing = true;
+        _lastPosition = cursorPosition;
+        _lastMovementAt = DateTimeOffset.UtcNow;
+        _hoverTriggered = true;
+
+        try
+        {
+            await TranslateAndShowAsync(cursorPosition, normalizedText, sourceStatus, captureCts);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _bubbleWindow.ShowMessage(cursorPosition, "取词失败", ex.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_currentCapture, captureCts))
+            {
+                _currentCapture = null;
+            }
+
+            _isCapturing = false;
+        }
+    }
+
     public void Start()
     {
         _timer.Start();

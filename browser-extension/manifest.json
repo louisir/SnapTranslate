@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "SnapTranslate Browser Bridge",
+  "description": "Send selected webpage text to the local SnapTranslate app.",
+  "version": "0.1.0",
+  "permissions": [],
+  "host_permissions": [
+    "http://127.0.0.1:49387/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

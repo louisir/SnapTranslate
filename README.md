@@ -7,6 +7,7 @@ SnapTranslate（拾译）是一个 Windows 屏幕取词与翻译工具 demo。`c
 - C# / .NET 10 WPF 系统托盘应用，启动后常驻托盘。
 - 鼠标悬停后截取鼠标附近 ROI。
 - 如果检测到刚发生过鼠标拖拽选择或双击选词，会直接读取选中文本，不再局限于鼠标附近 ROI。
+- 可选 Chrome / Edge 浏览器扩展会直接读取网页 DOM 选中文本，网页划词不再依赖剪贴板或 OCR。
 - 悬停 OCR 取词可配置为需要按住 Ctrl、Alt 或 Shift 才触发。
 - 悬停取词使用多通道管线：优先通过 Windows UI Automation 按鼠标坐标读取控件/网页文本，失败后再截图 OCR。
 - 优先通过 PaddleOCR runner 识别中英混排屏幕文字。
@@ -67,6 +68,16 @@ dotnet run --project src/SnapTranslate/SnapTranslate.csproj
 4. 在“翻译”页选择或输入源语言、目标语言，填写微软翻译 Key、Region。
 5. 在“OCR”页配置 PaddleOCR Python 或 runner。
 6. 保存后立即生效。
+
+浏览器划词增强：
+
+1. 启动 SnapTranslate。
+2. 打开 Chrome / Edge 扩展管理页。
+3. 开启“开发者模式”。
+4. 选择“加载已解压的扩展”。
+5. 选择 [browser-extension](browser-extension) 目录。
+
+扩展会把网页选中文本发送到本机 `http://127.0.0.1:49387/selection`，由 SnapTranslate 桌面端翻译并弹窗。
 
 配置文件位置：
 
