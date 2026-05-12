@@ -232,6 +232,12 @@ public sealed class SelectedTextCaptureService
                     {
                         bestText = text;
                     }
+
+                    string? tokenText = TryReadScintillaTokenAtPoint(window, cursorPosition);
+                    if (IsBetterSelectionText(tokenText, bestText))
+                    {
+                        bestText = tokenText;
+                    }
                 }
 
                 window = GetParent(window);
@@ -358,6 +364,134 @@ public sealed class SelectedTextCaptureService
             }
 
             _ = CloseHandle(process);
+        }
+    }
+
+    private static string? TryReadScintillaTokenAtPoint(IntPtr scintillaWindow, NativePoint screenPoint)
+    {
+        NativePoint clientPoint = screenPoint;
+        if (!ScreenToClient(scintillaWindow, ref clientPoint))
+        {
+            return null;
+        }
+
+        long position = SendMessage(
+            scintillaWindow,
+            SciPositionFromPointClose,
+            new IntPtr(clientPoint.X),
+            new IntPtr(clientPoint.Y)).ToInt64();
+        if (position < 0)
+        {
+            return null;
+        }
+
+        long start = SendMessage(scintillaWindow, SciWordStartPosition, new IntPtr(position), new IntPtr(1)).ToInt64();
+        long end = SendMessage(scintillaWindow, SciWordEndPosition, new IntPtr(position), new IntPtr(1)).ToInt64();
+        if (start < 0 || end <= start || end - start > MaxScintillaSelectionBytes)
+        {
+            return null;
+        }
+
+        string normalizedText = TextSanitizer.NormalizeForTranslation(TryReadScintillaTextRange(scintillaWindow, start, end) ?? string.Empty);
+        return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
+    }
+
+    private static string? TryReadScintillaTextRange(IntPtr scintillaWindow, long start, long end)
+    {
+        _ = GetWindowThreadProcessId(scintillaWindow, out uint processId);
+        if (processId == 0)
+        {
+            return null;
+        }
+
+        IntPtr process = OpenProcess(
+            ProcessVmOperation | ProcessVmRead | ProcessVmWrite | ProcessQueryLimitedInformation,
+            false,
+            processId);
+        if (process == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        IntPtr remoteText = IntPtr.Zero;
+        IntPtr remoteRange = IntPtr.Zero;
+        try
+        {
+            int textBufferSize = checked((int)(end - start) + 1);
+            remoteText = VirtualAllocEx(process, IntPtr.Zero, (UIntPtr)textBufferSize, MemCommit | MemReserve, PageReadWrite);
+            if (remoteText == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            int rangeSize = Marshal.SizeOf<SciTextRangeFull>();
+            remoteRange = VirtualAllocEx(process, IntPtr.Zero, (UIntPtr)rangeSize, MemCommit | MemReserve, PageReadWrite);
+            if (remoteRange == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            byte[] rangeBuffer = StructureToBytes(new SciTextRangeFull
+            {
+                CpMin = start,
+                CpMax = end,
+                Text = remoteText
+            });
+            if (!WriteProcessMemory(process, remoteRange, rangeBuffer, rangeBuffer.Length, out _))
+            {
+                return null;
+            }
+
+            _ = SendMessage(scintillaWindow, SciGetTextRangeFull, IntPtr.Zero, remoteRange);
+
+            byte[] textBuffer = new byte[textBufferSize];
+            if (!ReadProcessMemory(process, remoteText, textBuffer, textBuffer.Length, out IntPtr bytesRead) ||
+                bytesRead == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            int readLength = Math.Min(textBuffer.Length, checked((int)bytesRead.ToInt64()));
+            int textLength = Array.IndexOf(textBuffer, (byte)0, 0, readLength);
+            if (textLength < 0)
+            {
+                textLength = readLength;
+            }
+
+            int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
+            return DecodeScintillaText(textBuffer, textLength, codePage);
+        }
+        finally
+        {
+            if (remoteRange != IntPtr.Zero)
+            {
+                _ = VirtualFreeEx(process, remoteRange, UIntPtr.Zero, MemRelease);
+            }
+
+            if (remoteText != IntPtr.Zero)
+            {
+                _ = VirtualFreeEx(process, remoteText, UIntPtr.Zero, MemRelease);
+            }
+
+            _ = CloseHandle(process);
+        }
+    }
+
+    private static byte[] StructureToBytes<T>(T value)
+        where T : struct
+    {
+        int size = Marshal.SizeOf<T>();
+        byte[] buffer = new byte[size];
+        IntPtr pointer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(value, pointer, false);
+            Marshal.Copy(pointer, buffer, 0, size);
+            return buffer;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pointer);
         }
     }
 
@@ -513,6 +647,9 @@ public sealed class SelectedTextCaptureService
     private static extern IntPtr WindowFromPoint(NativePoint point);
 
     [DllImport("user32.dll")]
+    private static extern bool ScreenToClient(IntPtr hWnd, ref NativePoint lpPoint);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
@@ -559,6 +696,14 @@ public sealed class SelectedTextCaptureService
         out IntPtr lpNumberOfBytesRead);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteProcessMemory(
+        IntPtr hProcess,
+        IntPtr lpBaseAddress,
+        byte[] lpBuffer,
+        int nSize,
+        out IntPtr lpNumberOfBytesWritten);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern int MultiByteToWideChar(
         uint codePage,
         uint dwFlags,
@@ -568,7 +713,11 @@ public sealed class SelectedTextCaptureService
         int cchWideChar);
 
     private const uint SciGetSelText = 2161;
+    private const uint SciPositionFromPointClose = 2023;
+    private const uint SciGetTextRangeFull = 2039;
     private const uint SciGetCodePage = 2137;
+    private const uint SciWordStartPosition = 2266;
+    private const uint SciWordEndPosition = 2267;
     private const uint CodePageAnsi = 0;
     private const uint ProcessVmOperation = 0x0008;
     private const uint ProcessVmRead = 0x0010;
@@ -584,6 +733,14 @@ public sealed class SelectedTextCaptureService
     private const uint KeyEventKeyUp = 0x0002;
 
     private delegate bool EnumChildWindowProc(IntPtr window, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SciTextRangeFull
+    {
+        public long CpMin;
+        public long CpMax;
+        public IntPtr Text;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint
