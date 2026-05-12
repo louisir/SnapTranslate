@@ -43,11 +43,16 @@ public sealed class SelectedTextCaptureService
 
         if (requireDirectTextForClipboardFallback && string.IsNullOrWhiteSpace(directText))
         {
+            SelectionCaptureDiagnostics.Write(
+                $"selected final=<null> direct={SelectionCaptureDiagnostics.Text(directText)} clipboard=<skipped> requireDirect=true");
             return null;
         }
 
         string? clipboardText = await TryCaptureClipboardSelectedTextAsync(cancellationToken);
-        return IsBetterSelectionText(clipboardText, directText) ? clipboardText : directText;
+        string? finalText = IsBetterSelectionText(clipboardText, directText) ? clipboardText : directText;
+        SelectionCaptureDiagnostics.Write(
+            $"selected final={SelectionCaptureDiagnostics.Text(finalText)} direct={SelectionCaptureDiagnostics.Text(directText)} clipboard={SelectionCaptureDiagnostics.Text(clipboardText)} allowClipboard={allowClipboardFallback} requireDirect={requireDirectTextForClipboardFallback}");
+        return finalText;
     }
 
     private static async Task<string?> TryCaptureClipboardSelectedTextAsync(CancellationToken cancellationToken)
@@ -102,12 +107,14 @@ public sealed class SelectedTextCaptureService
         string? bestText = null;
 
         string? scintillaText = TryCaptureScintillaSelectedText();
+        SelectionCaptureDiagnostics.Write($"direct.scintilla {SelectionCaptureDiagnostics.Text(scintillaText)}");
         if (IsBetterSelectionText(scintillaText, bestText))
         {
             bestText = scintillaText;
         }
 
         string? automationText = TryCaptureAutomationSelectedText();
+        SelectionCaptureDiagnostics.Write($"direct.uia {SelectionCaptureDiagnostics.Text(automationText)}");
         if (IsBetterSelectionText(automationText, bestText))
         {
             bestText = automationText;
@@ -223,17 +230,23 @@ public sealed class SelectedTextCaptureService
             }
 
             IntPtr window = WindowFromPoint(cursorPosition);
+            SelectionCaptureDiagnostics.Write(
+                $"scintilla.cursor {cursorPosition.X},{cursorPosition.Y} hwnd=0x{window.ToInt64():X} class={GetWindowClassName(window)}");
             for (int depth = 0; window != IntPtr.Zero && depth < MaxScintillaParentDepth; depth++)
             {
                 if (IsScintillaWindow(window))
                 {
                     string? text = TryReadScintillaSelectedText(window);
+                    SelectionCaptureDiagnostics.Write(
+                        $"scintilla.point depth={depth} hwnd=0x{window.ToInt64():X} selected={SelectionCaptureDiagnostics.Text(text)}");
                     if (IsBetterSelectionText(text, bestText))
                     {
                         bestText = text;
                     }
 
                     string? tokenText = TryReadScintillaTokenAtPoint(window, cursorPosition);
+                    SelectionCaptureDiagnostics.Write(
+                        $"scintilla.point depth={depth} hwnd=0x{window.ToInt64():X} token={SelectionCaptureDiagnostics.Text(tokenText)}");
                     if (IsBetterSelectionText(tokenText, bestText))
                     {
                         bestText = tokenText;
@@ -244,6 +257,7 @@ public sealed class SelectedTextCaptureService
             }
 
             string? foregroundText = TryCaptureForegroundScintillaSelectedText();
+            SelectionCaptureDiagnostics.Write($"scintilla.foreground {SelectionCaptureDiagnostics.Text(foregroundText)}");
             if (IsBetterSelectionText(foregroundText, bestText))
             {
                 bestText = foregroundText;
@@ -287,17 +301,26 @@ public sealed class SelectedTextCaptureService
 
     private static bool IsScintillaWindow(IntPtr window)
     {
+        string className = GetWindowClassName(window);
+        return className.StartsWith("Scintilla", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetWindowClassName(IntPtr window)
+    {
         StringBuilder className = new(ScintillaClassNameCapacity);
         int length = GetClassName(window, className, className.Capacity);
-        return length > 0 &&
-            className.ToString().StartsWith("Scintilla", StringComparison.OrdinalIgnoreCase);
+        return length > 0 ? className.ToString() : string.Empty;
     }
 
     private static string? TryReadScintillaSelectedText(IntPtr scintillaWindow)
     {
         string? bestText = TryReadScintillaExpandedSelectionToken(scintillaWindow);
+        SelectionCaptureDiagnostics.Write(
+            $"scintilla.read hwnd=0x{scintillaWindow.ToInt64():X} expanded={SelectionCaptureDiagnostics.Text(bestText)}");
 
         long selectedByteLength = SendMessage(scintillaWindow, SciGetSelText, IntPtr.Zero, IntPtr.Zero).ToInt64();
+        SelectionCaptureDiagnostics.Write(
+            $"scintilla.read hwnd=0x{scintillaWindow.ToInt64():X} selectedByteLength={selectedByteLength}");
         if (selectedByteLength <= 0 || selectedByteLength > MaxScintillaSelectionBytes)
         {
             return bestText;
@@ -350,6 +373,8 @@ public sealed class SelectedTextCaptureService
 
             int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
             string normalizedText = TextSanitizer.NormalizeForTranslation(DecodeScintillaText(buffer, readLength, codePage));
+            SelectionCaptureDiagnostics.Write(
+                $"scintilla.read hwnd=0x{scintillaWindow.ToInt64():X} raw={SelectionCaptureDiagnostics.Text(normalizedText)} readLength={readLength} codePage={codePage}");
             if (IsBetterSelectionText(normalizedText, bestText))
             {
                 bestText = normalizedText;
@@ -382,6 +407,8 @@ public sealed class SelectedTextCaptureService
         long wordStart = SendMessage(scintillaWindow, SciWordStartPosition, new IntPtr(startPosition), new IntPtr(1)).ToInt64();
         long wordEndSeed = Math.Max(startPosition, endPosition - 1);
         long wordEnd = SendMessage(scintillaWindow, SciWordEndPosition, new IntPtr(wordEndSeed), new IntPtr(1)).ToInt64();
+        SelectionCaptureDiagnostics.Write(
+            $"scintilla.expand hwnd=0x{scintillaWindow.ToInt64():X} selectionStart={selectionStart} selectionEnd={selectionEnd} wordStart={wordStart} wordEnd={wordEnd}");
         if (wordStart < 0 || wordEnd <= wordStart || wordEnd - wordStart > MaxScintillaSelectionBytes)
         {
             return null;
