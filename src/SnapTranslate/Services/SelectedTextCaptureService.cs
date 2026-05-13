@@ -449,6 +449,12 @@ public sealed class SelectedTextCaptureService
 
     private static string? TryReadScintillaTextRange(IntPtr scintillaWindow, long start, long end)
     {
+        string? charAtText = TryReadScintillaTextRangeByCharAt(scintillaWindow, start, end);
+        if (!string.IsNullOrEmpty(charAtText))
+        {
+            return charAtText;
+        }
+
         _ = GetWindowThreadProcessId(scintillaWindow, out uint processId);
         if (processId == 0)
         {
@@ -520,6 +526,36 @@ public sealed class SelectedTextCaptureService
 
             _ = CloseHandle(process);
         }
+    }
+
+    private static string? TryReadScintillaTextRangeByCharAt(IntPtr scintillaWindow, long start, long end)
+    {
+        if (start < 0 || end <= start || end - start > MaxScintillaSelectionBytes)
+        {
+            return null;
+        }
+
+        int byteLength = checked((int)(end - start));
+        byte[] buffer = new byte[byteLength];
+        int actualLength = 0;
+        for (int offset = 0; offset < byteLength; offset++)
+        {
+            int value = SendMessage(scintillaWindow, SciGetCharAt, new IntPtr(start + offset), IntPtr.Zero).ToInt32();
+            if (value == 0)
+            {
+                break;
+            }
+
+            buffer[actualLength++] = (byte)(value & 0xFF);
+        }
+
+        if (actualLength <= 0)
+        {
+            return null;
+        }
+
+        int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        return DecodeScintillaText(buffer, actualLength, codePage);
     }
 
     private static byte[] StructureToBytes<T>(T value)
@@ -829,6 +865,7 @@ public sealed class SelectedTextCaptureService
         int cchWideChar);
 
     private const uint SciGetSelText = 2161;
+    private const uint SciGetCharAt = 2007;
     private const uint SciPositionFromPointClose = 2023;
     private const uint SciGetTextRangeFull = 2039;
     private const uint SciGetCodePage = 2137;
