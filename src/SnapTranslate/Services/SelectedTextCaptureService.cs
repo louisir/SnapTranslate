@@ -25,6 +25,7 @@ public sealed class SelectedTextCaptureService
     private const int DirectSelectionProbeDelayMs = 80;
     private const int MaxSelectionTextLength = 4000;
     private const int MaxScintillaSelectionBytes = (MaxSelectionTextLength * 4) + 8;
+    private const int ScintillaContextBytes = 192;
     private const int MaxScintillaParentDepth = 5;
     private const int ScintillaClassNameCapacity = 128;
     private const int MaxAutomationParentDepth = 6;
@@ -404,6 +405,14 @@ public sealed class SelectedTextCaptureService
 
         long startPosition = Math.Min(selectionStart, selectionEnd);
         long endPosition = Math.Max(selectionStart, selectionEnd);
+        string? unicodeContextText = TryReadScintillaUtf16WordAroundRange(scintillaWindow, startPosition, endPosition);
+        if (!string.IsNullOrWhiteSpace(unicodeContextText))
+        {
+            SelectionCaptureDiagnostics.Write(
+                $"scintilla.expand.utf16 hwnd=0x{scintillaWindow.ToInt64():X} text={SelectionCaptureDiagnostics.Text(unicodeContextText)}");
+            return unicodeContextText;
+        }
+
         long wordStart = SendMessage(scintillaWindow, SciWordStartPosition, new IntPtr(startPosition), new IntPtr(1)).ToInt64();
         long wordEndSeed = Math.Max(startPosition, endPosition - 1);
         long wordEnd = SendMessage(scintillaWindow, SciWordEndPosition, new IntPtr(wordEndSeed), new IntPtr(1)).ToInt64();
@@ -445,6 +454,86 @@ public sealed class SelectedTextCaptureService
 
         string normalizedText = TextSanitizer.NormalizeForTranslation(TryReadScintillaTextRange(scintillaWindow, start, end) ?? string.Empty);
         return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
+    }
+
+    private static string? TryReadScintillaUtf16WordAroundRange(IntPtr scintillaWindow, long start, long end)
+    {
+        string? bestText = null;
+        for (int parity = 0; parity <= 1; parity++)
+        {
+            long contextStart = Math.Max(0, start - ScintillaContextBytes);
+            if (contextStart % 2 != parity)
+            {
+                contextStart++;
+            }
+
+            if (contextStart > start)
+            {
+                contextStart = Math.Max(0, start - (start % 2 == parity ? 0 : 1));
+            }
+
+            long contextEnd = end + ScintillaContextBytes;
+            if (contextEnd % 2 != parity)
+            {
+                contextEnd++;
+            }
+
+            byte[]? bytes = TryReadScintillaBytesByCharAt(scintillaWindow, contextStart, contextEnd, stopAtNull: false);
+            if (bytes is null || !LooksLikeUtf16Le(bytes, bytes.Length))
+            {
+                continue;
+            }
+
+            int evenLength = bytes.Length - (bytes.Length % 2);
+            if (evenLength <= 0)
+            {
+                continue;
+            }
+
+            string text = Encoding.Unicode.GetString(bytes, 0, evenLength);
+            int selectedStart = (int)Math.Clamp((start - contextStart) / 2, 0, Math.Max(0, text.Length - 1));
+            int selectedEnd = (int)Math.Clamp((end - contextStart + 1) / 2, selectedStart + 1, text.Length);
+            string? candidate = SelectWordAroundDecodedRange(text, selectedStart, selectedEnd);
+            if (IsBetterSelectionText(candidate, bestText))
+            {
+                bestText = candidate;
+            }
+        }
+
+        return bestText;
+    }
+
+    private static string? SelectWordAroundDecodedRange(string text, int selectedStart, int selectedEnd)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        int start = Math.Clamp(selectedStart, 0, text.Length);
+        int end = Math.Clamp(selectedEnd, start, text.Length);
+        while (start > 0 && IsScintillaWordCharacter(text[start - 1]))
+        {
+            start--;
+        }
+
+        while (end < text.Length && IsScintillaWordCharacter(text[end]))
+        {
+            end++;
+        }
+
+        if (end <= start)
+        {
+            return null;
+        }
+
+        string normalizedText = TextSanitizer.NormalizeForTranslation(text[start..end]);
+        return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
+    }
+
+    private static bool IsScintillaWordCharacter(char character)
+    {
+        return char.IsLetterOrDigit(character) || character == '_';
     }
 
     private static string? TryReadScintillaTextRange(IntPtr scintillaWindow, long start, long end)
@@ -530,6 +619,18 @@ public sealed class SelectedTextCaptureService
 
     private static string? TryReadScintillaTextRangeByCharAt(IntPtr scintillaWindow, long start, long end)
     {
+        byte[]? buffer = TryReadScintillaBytesByCharAt(scintillaWindow, start, end, stopAtNull: false);
+        if (buffer is null || buffer.Length == 0)
+        {
+            return null;
+        }
+
+        int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        return DecodeScintillaText(buffer, buffer.Length, codePage);
+    }
+
+    private static byte[]? TryReadScintillaBytesByCharAt(IntPtr scintillaWindow, long start, long end, bool stopAtNull)
+    {
         if (start < 0 || end <= start || end - start > MaxScintillaSelectionBytes)
         {
             return null;
@@ -541,7 +642,7 @@ public sealed class SelectedTextCaptureService
         for (int offset = 0; offset < byteLength; offset++)
         {
             int value = SendMessage(scintillaWindow, SciGetCharAt, new IntPtr(start + offset), IntPtr.Zero).ToInt32();
-            if (value == 0)
+            if (stopAtNull && value == 0)
             {
                 break;
             }
@@ -554,8 +655,14 @@ public sealed class SelectedTextCaptureService
             return null;
         }
 
-        int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
-        return DecodeScintillaText(buffer, actualLength, codePage);
+        if (actualLength == buffer.Length)
+        {
+            return buffer;
+        }
+
+        byte[] resized = new byte[actualLength];
+        Array.Copy(buffer, resized, actualLength);
+        return resized;
     }
 
     private static byte[] StructureToBytes<T>(T value)

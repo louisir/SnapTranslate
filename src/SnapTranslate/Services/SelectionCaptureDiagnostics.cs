@@ -7,6 +7,7 @@ internal static class SelectionCaptureDiagnostics
 {
     private const long MaxLogBytes = 512 * 1024;
     private static readonly object SyncRoot = new();
+    private static bool _initialized;
 
     public static string LogPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -25,7 +26,14 @@ internal static class SelectionCaptureDiagnostics
                     Directory.CreateDirectory(directory);
                 }
 
-                if (File.Exists(LogPath) && new FileInfo(LogPath).Length > MaxLogBytes)
+                if (!_initialized)
+                {
+                    File.WriteAllText(
+                        LogPath,
+                        $"=== SnapTranslate selection diagnostics {DateTimeOffset.Now:O} ==={Environment.NewLine}");
+                    _initialized = true;
+                }
+                else if (File.Exists(LogPath) && new FileInfo(LogPath).Length > MaxLogBytes)
                 {
                     File.WriteAllText(LogPath, string.Empty);
                 }
