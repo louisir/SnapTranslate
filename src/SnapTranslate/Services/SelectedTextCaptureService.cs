@@ -405,6 +405,15 @@ public sealed class SelectedTextCaptureService
 
         long startPosition = Math.Min(selectionStart, selectionEnd);
         long endPosition = Math.Max(selectionStart, selectionEnd);
+        int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        string? byteContextText = TryReadScintillaByteWordAroundRange(scintillaWindow, startPosition, endPosition, codePage);
+        if (!string.IsNullOrWhiteSpace(byteContextText))
+        {
+            SelectionCaptureDiagnostics.Write(
+                $"scintilla.expand.bytes hwnd=0x{scintillaWindow.ToInt64():X} codePage={codePage} text={SelectionCaptureDiagnostics.Text(byteContextText)}");
+            return byteContextText;
+        }
+
         string? unicodeContextText = TryReadScintillaUtf16WordAroundRange(scintillaWindow, startPosition, endPosition);
         if (!string.IsNullOrWhiteSpace(unicodeContextText))
         {
@@ -452,7 +461,45 @@ public sealed class SelectedTextCaptureService
             return null;
         }
 
-        string normalizedText = TextSanitizer.NormalizeForTranslation(TryReadScintillaTextRange(scintillaWindow, start, end) ?? string.Empty);
+        int codePage = SendMessage(scintillaWindow, SciGetCodePage, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        string normalizedText = TextSanitizer.NormalizeForTranslation(
+            TryReadScintillaByteWordAroundRange(scintillaWindow, start, end, codePage) ??
+            TryReadScintillaTextRange(scintillaWindow, start, end) ??
+            string.Empty);
+        return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
+    }
+
+    private static string? TryReadScintillaByteWordAroundRange(IntPtr scintillaWindow, long start, long end, int codePage)
+    {
+        long contextStart = Math.Max(0, start - ScintillaContextBytes);
+        long contextEnd = end + ScintillaContextBytes;
+        byte[]? bytes = TryReadScintillaBytesByCharAt(scintillaWindow, contextStart, contextEnd, stopAtNull: false);
+        if (bytes is null || bytes.Length == 0)
+        {
+            return null;
+        }
+
+        int selectedStart = (int)Math.Clamp(start - contextStart, 0, bytes.Length);
+        int selectedEnd = (int)Math.Clamp(end - contextStart, selectedStart, bytes.Length);
+        if (selectedEnd <= selectedStart)
+        {
+            return null;
+        }
+
+        int tokenStart = selectedStart;
+        int tokenEnd = selectedEnd;
+        while (tokenStart > 0 && IsScintillaAsciiWordByte(bytes[tokenStart - 1]))
+        {
+            tokenStart--;
+        }
+
+        while (tokenEnd < bytes.Length && IsScintillaAsciiWordByte(bytes[tokenEnd]))
+        {
+            tokenEnd++;
+        }
+
+        string normalizedText = TextSanitizer.NormalizeForTranslation(
+            DecodeScintillaText(bytes, tokenStart, tokenEnd - tokenStart, codePage));
         return TextSanitizer.IsUsefulForTranslation(normalizedText) ? normalizedText : null;
     }
 
@@ -534,6 +581,14 @@ public sealed class SelectedTextCaptureService
     private static bool IsScintillaWordCharacter(char character)
     {
         return char.IsLetterOrDigit(character) || character == '_';
+    }
+
+    private static bool IsScintillaAsciiWordByte(byte value)
+    {
+        return value is >= (byte)'A' and <= (byte)'Z' ||
+            value is >= (byte)'a' and <= (byte)'z' ||
+            value is >= (byte)'0' and <= (byte)'9' ||
+            value == (byte)'_';
     }
 
     private static string? TryReadScintillaTextRange(IntPtr scintillaWindow, long start, long end)
@@ -691,6 +746,11 @@ public sealed class SelectedTextCaptureService
 
     private static string DecodeScintillaText(byte[] buffer, int length, int codePage)
     {
+        return DecodeScintillaText(buffer, 0, length, codePage);
+    }
+
+    private static string DecodeScintillaText(byte[] buffer, int offset, int length, int codePage)
+    {
         if (length <= 0)
         {
             return string.Empty;
@@ -698,22 +758,26 @@ public sealed class SelectedTextCaptureService
 
         string bestText = string.Empty;
 
-        int singleByteLength = Array.IndexOf(buffer, (byte)0, 0, length);
+        int singleByteLength = Array.IndexOf(buffer, (byte)0, offset, length);
         if (singleByteLength < 0)
         {
             singleByteLength = length;
         }
+        else
+        {
+            singleByteLength -= offset;
+        }
 
         if (singleByteLength > 0 &&
-            TryDecodeWithWindowsCodePage(buffer, singleByteLength, codePage > 0 ? (uint)codePage : CodePageAnsi, out string decodedText))
+            TryDecodeWithWindowsCodePage(buffer, offset, singleByteLength, codePage > 0 ? (uint)codePage : CodePageAnsi, out string decodedText))
         {
             bestText = decodedText;
         }
 
-        int utf16LeLength = GetUtf16LeTextByteLength(buffer, length, codePage);
+        int utf16LeLength = GetUtf16LeTextByteLength(buffer, offset, length, codePage);
         if (utf16LeLength > 0)
         {
-            string unicodeText = Encoding.Unicode.GetString(buffer, 0, utf16LeLength);
+            string unicodeText = Encoding.Unicode.GetString(buffer, offset, utf16LeLength);
             if (IsBetterSelectionText(unicodeText, bestText))
             {
                 bestText = unicodeText;
@@ -725,12 +789,17 @@ public sealed class SelectedTextCaptureService
             return bestText;
         }
 
-        return Encoding.UTF8.GetString(buffer, 0, singleByteLength);
+        return Encoding.UTF8.GetString(buffer, offset, singleByteLength);
     }
 
     private static int GetUtf16LeTextByteLength(byte[] buffer, int length, int codePage)
     {
-        bool likelyUtf16Le = codePage == CodePageUtf16Le || LooksLikeUtf16Le(buffer, length);
+        return GetUtf16LeTextByteLength(buffer, 0, length, codePage);
+    }
+
+    private static int GetUtf16LeTextByteLength(byte[] buffer, int offset, int length, int codePage)
+    {
+        bool likelyUtf16Le = codePage == CodePageUtf16Le || LooksLikeUtf16Le(buffer, offset, length);
         if (!likelyUtf16Le)
         {
             return 0;
@@ -739,7 +808,8 @@ public sealed class SelectedTextCaptureService
         int evenLength = length - (length % 2);
         for (int index = 1; index + 1 < evenLength; index++)
         {
-            if (buffer[index] == 0 && buffer[index + 1] == 0)
+            int absoluteIndex = offset + index;
+            if (buffer[absoluteIndex] == 0 && buffer[absoluteIndex + 1] == 0)
             {
                 return index % 2 == 1 ? index + 1 : index;
             }
@@ -749,6 +819,11 @@ public sealed class SelectedTextCaptureService
     }
 
     private static bool LooksLikeUtf16Le(byte[] buffer, int length)
+    {
+        return LooksLikeUtf16Le(buffer, 0, length);
+    }
+
+    private static bool LooksLikeUtf16Le(byte[] buffer, int offset, int length)
     {
         int sampleLength = Math.Min(length, 64);
         int pairCount = sampleLength / 2;
@@ -760,7 +835,7 @@ public sealed class SelectedTextCaptureService
         int oddZeroCount = 0;
         for (int index = 1; index < sampleLength; index += 2)
         {
-            if (buffer[index] == 0)
+            if (buffer[offset + index] == 0)
             {
                 oddZeroCount++;
             }
@@ -771,24 +846,50 @@ public sealed class SelectedTextCaptureService
 
     private static bool TryDecodeWithWindowsCodePage(byte[] buffer, int length, uint codePage, out string decodedText)
     {
+        return TryDecodeWithWindowsCodePage(buffer, 0, length, codePage, out decodedText);
+    }
+
+    private static bool TryDecodeWithWindowsCodePage(byte[] buffer, int offset, int length, uint codePage, out string decodedText)
+    {
         decodedText = string.Empty;
 
         try
         {
-            int charCount = MultiByteToWideChar(codePage, 0, buffer, length, null, 0);
-            if (charCount <= 0)
+            if (offset == 0)
+            {
+                int charCount = MultiByteToWideChar(codePage, 0, buffer, length, null, 0);
+                if (charCount <= 0)
+                {
+                    return false;
+                }
+
+                char[] chars = new char[charCount];
+                int written = MultiByteToWideChar(codePage, 0, buffer, length, chars, chars.Length);
+                if (written <= 0)
+                {
+                    return false;
+                }
+
+                decodedText = new string(chars, 0, written);
+                return true;
+            }
+
+            byte[] slice = new byte[length];
+            Array.Copy(buffer, offset, slice, 0, length);
+            int slicedCharCount = MultiByteToWideChar(codePage, 0, slice, length, null, 0);
+            if (slicedCharCount <= 0)
             {
                 return false;
             }
 
-            char[] chars = new char[charCount];
-            int written = MultiByteToWideChar(codePage, 0, buffer, length, chars, chars.Length);
-            if (written <= 0)
+            char[] slicedChars = new char[slicedCharCount];
+            int slicedWritten = MultiByteToWideChar(codePage, 0, slice, length, slicedChars, slicedChars.Length);
+            if (slicedWritten <= 0)
             {
                 return false;
             }
 
-            decodedText = new string(chars, 0, written);
+            decodedText = new string(slicedChars, 0, slicedWritten);
             return true;
         }
         catch
